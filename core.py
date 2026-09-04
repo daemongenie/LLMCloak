@@ -224,6 +224,31 @@ class Sanitizer:
             self._audit(f"FATAL tag mint exhausted ({prefix}*)")
             raise RuntimeError(f"tag mint exhausted for prefix {prefix}")
 
+    def _retag_token(self, tok: str, prefix: str = "PWD_") -> str:
+        """v1.5.11: deterministic opaque token for a FOREIGN tag-shaped
+        span (old tag from a previous vault state). Width starts at 8 hex
+        so the token is always restore-matchable; the mapping is stored so
+        desanitize() hands the original token back to the client. The core
+        index uses setdefault only: a foreign token must NEVER overwrite
+        the core->secret mapping of a real secret."""
+        fam = prefix or "PWD_"
+        with self._lock:
+            # width 4/5/6 BYTES = 8/10/12 hex chars: the token must always
+            # stay matchable by _MULTI_TAG_RX / TAG_TOLERANT_RE (8..12 hex)
+            # so desanitize() can restore it.
+            for n in (4, 5, 6):
+                d = hmac.new(self.salt, tok.encode("utf-8"),
+                             hashlib.sha256).digest()
+                core = d[:n].hex()
+                tag = fam + core
+                hit = self.tag2secret.get(tag)
+                if hit is None or hit == tok:
+                    self.tag2secret.setdefault(tag, tok)
+                    self.tag_core2secret.setdefault(core, tok)
+                    self._touch_fams(tag)
+                    return tag
+            return self._mint(fam, tok)
+
     def _audit(self, event: str) -> None:
         self.audit.append(f"{time.strftime('%H:%M:%S')} {event}")
         if len(self.audit) > 500:
@@ -436,70 +461,181 @@ a plain file loads as-is even when master_key is set.
             self._ac = None               # fail-open to sequential path
 
     # ---------- sanitize (out) ----------
-    def sanitize(self, text: str, prefix: str = "PWD_") -> Tuple[str, int]:
-        # prefix (v1.5.7): default family for values without an explicit
-        # column mapping (value2prefix always wins for ingested values).
-        """Replaces known secrets and pattern matches with tags. (out, count).
+    def _sanitize_plain(self, seg: str, prefix: str) -> Tuple[str, int]:
+        """v1.5.11 helper: sanitize a fragment that contains NO foreign
+        tag spans. Values are replaced in a SINGLE left-to-right pass
+        (AC matches, longest-first overlap resolution): a replacement is
+        never rescanned, so a minted tag can never be shredded by a later
+        shorter value (the field bug: value "0"/"NAZIONE" inside families
+        like R07_CD_NAZIONE_*). Patterns then run only on the gaps
+        between already-minted tags, so a pattern can never match inside a
+        freshly minted tag (hex cores look like many regex payloads)."""
+        count = 0
+        # ---- values: single-pass, overlap-resolved replacement ----
+        matches = []
+        if self._ac is not None:
+            # pyahocorasick yields end as the index of the LAST match
+            # character (INCLUSIVE): exclusive end = end + 1.
+            for end, sv in self._ac.iter(seg):
+                if sv:
+                    matches.append((end - len(sv) + 1, end + 1, sv))
+        else:
+            for sv in self._values:
+                if not sv:
+                    continue
+                i = seg.find(sv)
+                while i >= 0:
+                    matches.append((i, i + len(sv), sv))
+                    i = seg.find(sv, i + 1)
+        matches.sort(key=lambda m: (m[0], -(m[1] - m[0])))
+        picked = []
+        last_end = -1
+        for st, en, sv in matches:
+            if st >= last_end and sv:
+                picked.append((st, en, sv))
+                last_end = en
+        parts = []
+        pos = 0
+        for st, en, sv in picked:
+            parts.append(seg[pos:st])
+            if sv in self._minted_extra:
+                mt = self._minted_extra[sv]
+                self.tag2secret.setdefault(mt, sv)
+                self.tag_core2secret.setdefault(
+                    mt[len(self.value2prefix.get(sv) or TAG_PREFIX):], sv)
+                self._touch_fams(mt)
+                tag = mt
+            else:
+                tag = self.tag_for(sv, prefix)
+            parts.append(tag)
+            pos = en
+            count += 1
+        parts.append(seg[pos:])
+        out = "".join(parts)
+        # ---- patterns: minted tags shielded via fams+hex segmentation ----
+        with self._lock:
+            fams = set(self._get_fams()) | set(self._session_fams)
+        fams.add(TAG_PREFIX)
+        if self.patterns and len(fams) > 1:
+            mrx = re.compile(
+                "(?:" + "|".join(re.escape(f) for f in sorted(fams))
+                + r")[0-9a-f]{8,24}")
+            gaps = []
+            gpos = 0
+            for gm in mrx.finditer(out):
+                if gm.start() > gpos:
+                    gaps.append((gpos, gm.start()))
+                gpos = gm.end()
+            gaps.append((gpos, len(out)))
+            rebuilt = []
+            prev = 0
+            for a, b in gaps:
+                rebuilt.append(out[prev:a])
+                seg = out[a:b]
+                for pat in self.patterns:
+                    def _cb(m, _seg=seg):
+                        nonlocal count
+                        v = m.group(0)
+                        t = self._mint(self.value2prefix.get(v) or prefix, v)
+                        self.tag2secret.setdefault(t, v)
+                        self.tag_core2secret.setdefault(
+                            t[len(self.value2prefix.get(v) or prefix):], v)
+                        self._touch_fams(t)
+                        count += 1
+                        return t
+                    seg = pat.sub(_cb, seg)
+                rebuilt.append(seg)
+                prev = b
+            rebuilt.append(out[prev:])
+            out = "".join(rebuilt)
+        else:
+            for pat in self.patterns:
+                def _cb(m):
+                    nonlocal count
+                    v = m.group(0)
+                    t = self._mint(self.value2prefix.get(v) or prefix, v)
+                    self.tag2secret.setdefault(t, v)
+                    self.tag_core2secret.setdefault(
+                        t[len(self.value2prefix.get(v) or prefix):], v)
+                    self._touch_fams(t)
+                    count += 1
+                    return t
+                out = pat.sub(_cb, out)
+        return out, count
 
-        v1.4.2 perf: the O(V) per-secret substring scans are replaced by ONE
-        Aho-Corasick scan that collects the CANDIDATE secrets actually present
-        in the text; the replacement itself keeps the original sequential
-        longest-first loop (identical output). If pyahocorasick is missing or
-        the index failed to build, all values are candidates (old behaviour)."""
+    def sanitize(self, text: str, prefix: str = "PWD_") -> Tuple[str, int]:
+        """v1.5.11: segmented sanitization (field fix, .222).
+
+        Long chat histories echo back tag-shaped tokens minted by previous
+        rounds / previous vault states. Their internals (family text like
+        R07_CD_NAZIONE_ or hex cores) collide with current vault values;
+        the old sequential replace shredded those tokens (e.g. value "0"
+        inside every R07_* family) and re-introduced values through minted
+        families, leaving tag-soup that trips the no-leak scan ->
+        fail-closed RuntimeError -> 500 on exactly the long-history
+        requests. Now:
+          1. tag-shaped spans are located first and classified: tags of
+             this store are kept verbatim (shielded atoms), foreign/old
+             tags are queued for whole-token re-tagging, and a token that
+             is itself a vault VALUE stays in the plain flow (value
+             replacement, as before);
+          2. only the gaps between spans are value-sanitized, each gap in
+             a single collision-free pass;
+          3. foreign spans are then replaced WHOLE with a deterministic,
+             restore-mapped opaque tag (round-trip preserved);
+          4. the no-leak scan is unchanged (fail-closed preserved).
+        """
         if not self.loaded:
             raise VaultNotLoaded("vault not loaded: sanitize refused (fail-safe)")
         with self._lock:
-            # candidate secrets: single AC scan over the text (or all values)
-            if self._ac is not None:
-                cand = {s for _, s in self._ac.iter(text)}
-            else:
-                cand = set(self._values)
-            out = text
             count = 0
-            # exact secrets: longest first (avoids partial replacements)
-            for s in sorted(cand, key=len, reverse=True):
-                if not s:
+            # ---- 1) locate tag-shaped spans and classify them ----
+            spans: List[Tuple[int, int, str, bool]] = []  # (a, b, tok, retag)
+            for m in self._OLD_TAG_RX.finditer(text):
+                tok = m.group(0)
+                if tok in self._values:
+                    continue  # vault value shaped like a tag: value pass
+                a, b = m.span()
+                if spans and a < spans[-1][1]:
+                    if b > spans[-1][1]:
+                        spans[-1] = (spans[-1][0], b, m.group(0),
+                                     m.group(0) not in self.tag2secret)
                     continue
-                n = out.count(s)
-                if n:
-                    out = out.replace(s, self.tag_for(s, prefix))
-                    count += n
-            # dynamic patterns: each unique match -> deterministic, stored tag
-            for pat in self.patterns:
-                ms = set(pat.findall(out))
-                for m in ms:
-                    t = self._mint(self.value2prefix.get(m) or prefix, m)
-                    self.tag2secret.setdefault(t, m)
-                    self._touch_fams(t)
-                    n = out.count(m)
-                    out = out.replace(m, t)
-                    count += n
-            # v1.5.7 fix (E2E T3): values minted via sanitize_rows/CSV API
-            # live in tag2secret but NOT in the dictionary/AC; without this
-            # pass a later chat mentioning the value went out UNFILTERED.
-            # Replace them with the SAME minted tag (deterministic) so the
-            # round-trip restores identically. Longest first.
-            if self._minted_extra:
-                with self._lock:
-                    extras = list(self._minted_extra.items())
-                for s2, t2 in sorted(extras, key=lambda kv: len(kv[0]),
-                                     reverse=True):
-                    if s2 in out:
-                        nn = out.count(s2)
-                        out = out.replace(s2, t2)
-                        count += nn
-            # no-leak check: no secret must survive (single AC scan when
-            # available; identical threshold: only len>=4 secrets are fatal)
-            # v1.5.9-hotfix (field, .222): occurrences INSIDE our own minted
-            # tags are not leaks. With CSV-ingested vaults a tag core or a
-            # column prefix can contain a string that is itself a vault
-            # value (e.g. a numeric ID colliding with an HMAC hex core, or
-            # a cell equal to a header-derived family like EMAIL_): the raw
-            # scan then sees a phantom residual inside the tag and
-            # fail-closes EVERY proxied LLM request (RuntimeError -> 500,
-            # surfaced client-side as 'OpenRouter error 500'). Mask
-            # tag-shaped spans on a scan-only copy; any occurrence OUTSIDE
-            # our tags stays fatal (fail-closed preserved).
+                spans.append((a, b, tok, tok not in self.tag2secret))
+            # ---- 2) build segments; sanitize gaps; re-tag spans whole ----
+            out_parts: List[str] = []
+            pos = 0
+            for a, b, tok, retag in spans:
+                if a > pos:
+                    seg, c = self._sanitize_plain(text[pos:a], prefix)
+                    count += c
+                    out_parts.append(seg)
+                if retag:
+                    try:
+                        t2 = self._retag_token(tok, prefix)
+                        out_parts.append(t2)
+                        count += 1
+                    except RuntimeError:
+                        raise
+                    except Exception as exc:
+                        # opaque-token retag must never break the request:
+                        # keep the span verbatim and rely on the no-leak
+                        # scan (fail-closed) to judge the result.
+                        self._audit(f"retag failed ({type(exc).__name__})")
+                        out_parts.append(tok)
+                else:
+                    # tag of THIS store: pass through untouched (restore
+                    # happens on the way back via tag2secret).
+                    out_parts.append(tok)
+                pos = b
+            if pos < len(text):
+                seg, c = self._sanitize_plain(text[pos:], prefix)
+                count += c
+                out_parts.append(seg)
+            out = "".join(out_parts)
+            # ---- 3) no-leak check: no secret must survive (single AC
+            # scan when available; identical threshold: only len>=4
+            # secrets are fatal)
             scan = out
             with self._lock:
                 fams = set(self._get_fams()) | set(self._session_fams)
@@ -511,18 +647,36 @@ a plain file loads as-is even when master_key is set.
                 scan = mrx.sub(" ", scan)
             resid = None
             if self._ac is not None:
-                for _, s in self._ac.iter(scan):
-                    if len(s) >= 4:
-                        resid = s
+                for _, sv in self._ac.iter(scan):
+                    if len(sv) >= 4:
+                        resid = sv
                         break
             else:
-                for s in self._values:
-                    if len(s) >= 4 and s in scan:
-                        resid = s
+                for sv in self._values:
+                    if len(sv) >= 4 and sv in scan:
+                        resid = sv
                         break
             if resid is not None:
-                self._audit("FATAL no-leak residual secret in output")
-                raise RuntimeError("no-leak check failed after sanitize")
+                # v1.5.10 diagnostic: shape of the residual WITHOUT disclosing
+                # the secret (length + first 2 chars + context with the
+                # occurrence itself blanked out).
+                try:
+                    i = scan.find(resid)
+                    ctx = ""
+                    if i >= 0:
+                        pre = scan[max(0, i - 40):i]
+                        post = scan[i + len(resid): i + len(resid) + 40]
+                        ctx = pre + "<RESID:" + str(len(resid)) + ">" + post
+                    self._audit("FATAL no-leak residual secret in output "
+                                f"(len={len(resid)} head={resid[:2]}* "
+                                f"ctx={ctx!r})")
+                    raise RuntimeError(
+                        "no-leak check failed after sanitize "
+                        f"(len={len(resid)} head={resid[:2]}* ctx={ctx!r})")
+                except RuntimeError:
+                    raise
+                except Exception:
+                    raise RuntimeError("no-leak check failed after sanitize")
             self.replace_count += count
             return out, count
 
@@ -596,6 +750,24 @@ a plain file loads as-is even when master_key is set.
     # (family = uppercase chunks with trailing _, core = hex).
     _MULTI_TAG_RX = re.compile(
         r"[\"'\s]*([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_)([0-9a-f]{8,12})[\"'\s]*")
+
+    # v1.5.11: tag-shaped token as it may appear in a client history
+    # (tags minted by previous rounds under a previous vault state).
+    # Matches family (uppercase chunks) + 8..12 hex, WITHOUT the quotes/
+    # spaces guards used by the restore path: here we want raw spans.
+    # v1.5.11: the family part must NOT require a trailing underscore:
+    # glued tokens like R07_ST_MOD597531b7 (family + core without "_")
+    # were invisible to the span protection and got shredded by the
+    # value pass. Greedy family with backtracking; false positives are
+    # safe (they are retagged and restored verbatim on the way back).
+    # v1.5.11 FINAL: word-anchored whole-token spans:
+    #   - (?<![0-9A-Za-z]) / (?![0-9a-f]) isolate the token: a hex run
+    #     inside a longer word (e.g. ...80 lines) can never match;
+    #   - the span is retagged WHOLE, so no partial-match residue is left
+    #     next to the minted tag to be re-shredded by the value pass;
+    #   - false positives on real words are SAFE: retag + verbatim restore.
+    _OLD_TAG_RX = re.compile(
+        r"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_?)([0-9a-f]{8,12})(?![0-9a-f])")
 
     def _desanitize_multi(self, text: str) -> Tuple[str, int, List[str]]:
         """Single-scan restore across ALL families. Tag-shaped tokens are

@@ -173,7 +173,7 @@ NOTICE_TEXT = (
     "for character. Never translate, complete, guess or modify them, and "
     "do not comment about this notice or the tokens.")
 
-app = FastAPI(title="LLMCloak", version="1.5.10")
+app = FastAPI(title="LLMCloak", version="1.5.11")
 san = Sanitizer()
 _stats = {"sanitized_out": 0, "restored_in": 0, "unresolved": 0,
           "requests": 0, "bytes_in": 0, "ingested": 0, "purged": 0}

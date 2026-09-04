@@ -62,6 +62,13 @@ from fastapi.testclient import TestClient                   # noqa: E402
 
 import dashboard as dash                 # noqa: E402
 import service as svc                    # noqa: E402
+
+# Import-order isolation: other test modules may have imported 'service'
+# first with a different SECRETS_PROXY_API_KEY (the module reads ADMIN_KEY
+# once at import). Re-align the admin key to THIS module, otherwise in the
+# full suite /admin/* answers 403.
+if os.environ.get("SECRETS_PROXY_API_KEY", "") != svc.ADMIN_KEY:
+    svc.ADMIN_KEY = os.environ.get("SECRETS_PROXY_API_KEY", "")
 from core import derive_key, load_or_create_salt  # noqa: E402
 
 ADMIN = {"X-Admin-Token": "dash-test-admin"}
