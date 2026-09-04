@@ -1,0 +1,5 @@
+# example vault — ONE secret per line, permissions 0600
+# lines re:<regex> = patterns for dynamic credentials
+Ex4mpl3-P@ss!42
+s3cr3t-API-KEY-xyz
+re:sk-[a-zA-Z0-9]{20,}

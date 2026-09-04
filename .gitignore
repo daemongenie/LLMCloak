@@ -1,0 +1,30 @@
+# --- RUNTIME VAULT & KEYS: NEVER COMMIT (real customer data) ---
+vault.txt
+vault.txt.*
+.kdf_salt
+*.salt
+*.tagsalt
+service_config.json
+
+# --- python ---
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# --- backups / archives ---
+*.bak
+*.bak_*
+*_backup_*
+backup_*/
+*.tar.gz
+*.bundle
+
+# --- logs / pid / runtime ---
+run/
+*.log
+*.pid
+
+# --- test runtime artifacts ---
+_e2e_config.json
+tests/_vault*
