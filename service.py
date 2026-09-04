@@ -173,7 +173,7 @@ NOTICE_TEXT = (
     "for character. Never translate, complete, guess or modify them, and "
     "do not comment about this notice or the tokens.")
 
-app = FastAPI(title="LLMCloak", version="1.5.9")
+app = FastAPI(title="LLMCloak", version="1.5.10")
 san = Sanitizer()
 _stats = {"sanitized_out": 0, "restored_in": 0, "unresolved": 0,
           "requests": 0, "bytes_in": 0, "ingested": 0, "purged": 0}
@@ -2066,6 +2066,22 @@ def _import_rollback(s: dict, rec_id: str) -> dict:
 
 
 # ---------- Mode A: transparent proxy ----------
+def _walk_strings(obj, fn):
+    """v1.5.10: apply fn to every string VALUE of a parsed JSON structure
+    (dict values, list items, arbitrarily nested). Keys are protocol
+    identifiers ("role", "model", "type", ...) and are deliberately left
+    untouched: raw-text sanitization could rewrite them and corrupt the
+    payload. Non-string leaves (numbers, booleans, null) pass through
+    unchanged, so JSON literals can never be rewritten by the vault."""
+    if isinstance(obj, str):
+        return fn(obj)
+    if isinstance(obj, list):
+        return [_walk_strings(x, fn) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _walk_strings(v, fn) for k, v in obj.items()}
+    return obj
+
+
 def _sanitize_body(raw: bytes):
     try:
         text = raw.decode("utf-8")
@@ -2074,8 +2090,60 @@ def _sanitize_body(raw: bytes):
     if not san.is_loaded():
         raise HTTPException(503, "vault not loaded: secrets cannot travel "
                                  "in clear to the upstream (fail-safe)")
-    out, n = san.sanitize(text)
-    return out.encode("utf-8"), n
+    # v1.5.10: sanitize PARSED JSON string fields, never the raw JSON
+    # text. With large CSV-ingested vaults (tens of thousands of
+    # real-world cells) raw-text replacement can rewrite the JSON
+    # structure itself (numeric literals like "id": 3471234567, the
+    # true/false/null tokens, quotes and escapes inside string values):
+    # the resulting body is no longer valid JSON and, forwarded as-is,
+    # made upstreams answer '400 JSON parsing failed'. Parsing first and
+    # walking only string values keeps the forwarded body valid JSON
+    # whenever the client sent valid JSON. Non-JSON bodies keep the
+    # legacy raw-text path (best effort).
+    try:
+        payload = json.loads(text)
+    except Exception:
+        out, n = san.sanitize(text)
+        return out.encode("utf-8"), n
+    total = 0
+
+    def _san_str(s: str) -> str:
+        nonlocal total
+        out, n = san.sanitize(s)
+        total += n
+        return out
+
+    new_payload = _walk_strings(payload, _san_str)
+    if total == 0:
+        return raw, 0
+    return json.dumps(new_payload).encode("utf-8"), total
+
+
+def _restore_response_text(text: str):
+    """v1.5.10: desanitize PARSED JSON string fields when the upstream
+    answer is JSON, so a restored secret containing quotes/backslashes/
+    newlines is re-escaped by json.dumps instead of breaking the
+    client-side JSON (mirror of the _sanitize_body fix). If nothing is
+    restored the original text is returned byte-identical; non-JSON
+    answers keep the legacy raw-text desanitize."""
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return san.desanitize(text)
+    restored, unresolved = 0, []
+
+    def _des_str(s: str) -> str:
+        nonlocal restored
+        out, r, u = san.desanitize(s)
+        restored += r
+        unresolved.extend(u)
+        return out
+
+    new_payload = _walk_strings(payload, _des_str)
+    if restored == 0:
+        return text, 0, unresolved
+    return json.dumps(new_payload,
+                      ensure_ascii=False), restored, unresolved
 
 
 def _inject_notice(payload, tagged: int):
@@ -2210,7 +2278,7 @@ async def proxy(path: str, request: Request):
         await r.aclose()
         await client.aclose()
     t_pre_ds = time.perf_counter()  # upstream I/O (aread/aclose) excluded
-    out, restored, unresolved = san.desanitize(text)
+    out, restored, unresolved = _restore_response_text(text)
     with _stats_lock:
         _stats["restored_in"] += restored
         _stats["unresolved"] += len(unresolved)
