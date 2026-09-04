@@ -1,3 +1,17 @@
+# Copyright 2026 Quantum Sphere EOOD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 core.py — secret pseudonymization <-> opaque tags.
 
@@ -205,7 +219,7 @@ class Sanitizer:
                     # families) so desanitize()'s auto-family discovery
                     # sees them and stream/batch restore works.
                     self.tag2secret.setdefault(tag, value)
-                    self._touch_fams()
+                    self._touch_fams(tag)
                     return tag
             self._audit(f"FATAL tag mint exhausted ({prefix}*)")
             raise RuntimeError(f"tag mint exhausted for prefix {prefix}")
@@ -333,6 +347,7 @@ a plain file loads as-is even when master_key is set.
             self.patterns = [re.compile(p) for p in (patterns or [])]
             self.tag2secret = {}
             self._fams_cache = None
+            self._session_fams: set = set()  # v1.5.9 unresolved-reporting memory
             report = {"secrets": len(self.secrets), "named": len(self.named),
                       "patterns": len(self.patterns), "extended": []}
             # first pass 8 hex, collisions -> 12 hex, still colliding -> fail
@@ -357,7 +372,7 @@ a plain file loads as-is even when master_key is set.
                     raise VaultCollisionError(
                         f"persistent collision on {t} (fail-safe: refused)")
                 self.tag2secret[t] = s
-                self._touch_fams()
+                self._touch_fams(t)
                 if n == 6:
                     report["extended"].append(TAG_PREFIX + t[4:10] + "...")
             self.loaded = True
@@ -386,6 +401,12 @@ a plain file loads as-is even when master_key is set.
             self.value2prefix = {}
             self._ac = None
             self.loaded = False
+            # v1.5.9: _session_fams is NOT cleared here — it feeds unresolved-
+            # tag reporting only (no restore: tag2secret is empty).
+            # v1.5.9: minted whole-cell tags belong to the wiped session too;
+            # keeping them made load_vault resurrect tags from PREVIOUS vaults
+            # (cross-vault leak: cells from vault A got tagged in vault B).
+            self._minted_extra = {}
             self._audit("lock: state wiped")
 
     def is_loaded(self) -> bool:
@@ -449,7 +470,7 @@ a plain file loads as-is even when master_key is set.
                 for m in ms:
                     t = self._mint(self.value2prefix.get(m) or prefix, m)
                     self.tag2secret.setdefault(t, m)
-                    self._touch_fams()
+                    self._touch_fams(t)
                     n = out.count(m)
                     out = out.replace(m, t)
                     count += n
@@ -532,8 +553,14 @@ a plain file loads as-is even when master_key is set.
     # at every mutation site of tag2secret.
     _fams_cache = None
 
-    def _touch_fams(self):
+    def _touch_fams(self, tag: str | None = None):
         self._fams_cache = None
+        # v1.5.9: session-family memory for unresolved-tag reporting.
+        # Survives lock() (audit/reporting only: resolution stays hard-cut).
+        if tag:
+            i = tag.rfind("_")
+            if i > 0:
+                self._session_fams.add(tag[:i + 1])
 
     def _get_fams(self):
         with self._lock:
@@ -569,7 +596,11 @@ a plain file loads as-is even when master_key is set.
                 if secret is None:
                     secret = self.tag_core2secret.get(core)
                 if secret is None:
-                    if fam in fams:
+                    # v1.5.9: families seen this session (incl. before a
+                    # lock) still get reported as unresolved — hard-cut
+                    # keeps resolution impossible, but the attempt is
+                    # visible in the response and in the audit ring.
+                    if fam in fams or fam in self._session_fams:
                         unresolved.append(tag)
                     continue
                 s_abs, e_abs = m.start(1), m.end(2)
@@ -578,6 +609,9 @@ a plain file loads as-is even when master_key is set.
                 pos = e_abs
                 resolved += 1
         out.append(text[pos:])
+        # v1.5.9: audit unresolved-tag attempts (redacted: count only)
+        if unresolved:
+            self._audit(f"desanitize: unresolved={len(unresolved)}")
         return "".join(out), resolved, unresolved
 
     def desanitize(self, text: str, prefix: str = "PWD_",
@@ -603,6 +637,8 @@ a plain file loads as-is even when master_key is set.
             for t in u:
                 if t not in un:
                     un.append(t)
+        if un:
+            self._audit(f"desanitize: unresolved={len(un)}")
         return out, total, un
 
     # ---------- batch CSV (v1.4.0-dev) ----------
@@ -644,7 +680,7 @@ a plain file loads as-is even when master_key is set.
                     tag = self._mint(col_override or typed.upper() + "_", cell)
                     with self._lock:
                         self.tag2secret.setdefault(tag, cell)
-                        self._touch_fams()
+                        self._touch_fams(tag)
                         self._minted_extra.setdefault(cell, tag)
                     return tag, 0, 1
                 if typed and not force_sensitive:
@@ -655,7 +691,7 @@ a plain file loads as-is even when master_key is set.
             tag = self._mint(prefix, cell)
             with self._lock:
                 self.tag2secret.setdefault(tag, cell)
-                self._touch_fams()
+                self._touch_fams(tag)
                 self._minted_extra.setdefault(cell, tag)
             return tag, 0, 1
         return out, n, 0

@@ -1,3 +1,17 @@
+# Copyright 2026 Quantum Sphere EOOD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """CSV ingestion tests (v1.4.0-dev, goal g-e5ef4ce5).
 
 Whole-list anonymization (e.g. a customer table extracted from Oracle):
@@ -176,7 +190,10 @@ def test_05_multipart_upload(sp):
                          headers=AUTH)
     assert r.status_code == 200, r.text
     d = r.json()
-    assert d["rows"] == 4 and d["replaced"] == 2
+    import json as _j, os as _os
+    open("/tmp/dbg_%s.json" % _os.environ.get("DBG","x"), "w").write(_j.dumps(d, ensure_ascii=False, indent=1))
+    d2=r.json()
+    assert d2["rows"] == 4 and d2["replaced"] == 2
     assert SECRET_A not in d["csv"]
 
 
@@ -202,7 +219,10 @@ def test_07_delimiter_semicolon(sp):
                          headers=AUTH)
     assert r.status_code == 200
     d = r.json()
-    assert d["rows"] == 4 and d["replaced"] == 2
+    import json as _j, os as _os
+    open("/tmp/dbg_%s.json" % _os.environ.get("DBG","x"), "w").write(_j.dumps(d, ensure_ascii=False, indent=1))
+    d2=r.json()
+    assert d2["rows"] == 4 and d2["replaced"] == 2
     assert SECRET_A not in d["csv"] and SECRET_B not in d["csv"]
     r2 = sp.client().post("/csv/restore",
                           json={"csv": d["csv"], "delimiter": ";"},

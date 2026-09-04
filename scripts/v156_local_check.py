@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright 2026 Quantum Sphere EOOD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# STANDALONE SCRIPT — run directly: python3 scripts/v156_local_check.py
+# NOT part of the pytest suite (module-level code would fail under pytest collection).
+
 """Test funzionale v1.5.6 (storico import CSV + rollback per-import).
 
 Aspettative derivate dalla semantica REALE del servizio (v1.5.6):
@@ -28,6 +45,7 @@ Scenari:
   T11 ingest celle protette -> added=5 ('1'-'4'+EPS-9), skipped=3;
       rollback -> removed=5 (anche le celle numeriche escono)
   T12 purge -> purged=1 (solo DELTA), NESSUN record nello storico
+STANDALONE SCRIPT — run directly: python3 scripts/v156_local_check.py (NOT part of the pytest suite)
 """
 import os, sys, shutil
 

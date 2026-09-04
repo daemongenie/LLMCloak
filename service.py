@@ -1,3 +1,17 @@
+# Copyright 2026 Quantum Sphere EOOD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 service.py — LLM Secrets Proxy (spec v1, v1.1.0).
 
@@ -1400,8 +1414,9 @@ def _register_dashboard(app) -> None:
             if os.path.exists(KDF_SALT_PATH):
                 os.replace(KDF_SALT_PATH,
                            os.path.join(d, "vault.txt.salt.orphan-" + ts))
-            if os.path.exists(IMPORTS_PATH):
-                os.replace(IMPORTS_PATH,
+            if_ = _imports_path()
+            if os.path.exists(if_):
+                os.replace(if_,
                            os.path.join(d, "vault.txt.imports.orphan-" + ts))
             dash.SESSIONS.drop_all()
             san.lock()
@@ -1886,15 +1901,21 @@ _register_dashboard(app)
 
 # ---------- v1.5.6: CSV import history registry (per-import delete) ----
 IMPORTS_PATH = VAULT_PATH + ".imports"
+
+def _imports_path() -> str:
+    """v1.5.9: import registry path evaluated at CALL time — honours
+    runtime VAULT_PATH changes (multi-vault reloads / test isolation);
+    module-level IMPORTS_PATH stays as the import-time default."""
+    return VAULT_PATH + ".imports"
 IMPORTS_MAGIC = b"gAAAAA"     # Fernet token prefix
 
 
 def _imports_read(s: dict) -> list:
     """Decrypted list of import records (one JSON object per line):
     {id, ts, file, added, vals: [vault lines appended by this import]}."""
-    if not os.path.exists(IMPORTS_PATH):
+    if not os.path.exists(_imports_path()):
         return []
-    with open(IMPORTS_PATH, "rb") as f:
+    with open(_imports_path(), "rb") as f:
         raw = f.read()
     if raw.startswith(IMPORTS_MAGIC):
         raw = Fernet(s["key"].encode()).decrypt(raw)
@@ -1917,14 +1938,14 @@ def _imports_write(s: dict, recs: list) -> None:
     data = (body + "\n").encode("utf-8") if recs else b""
     if recs:
         data = Fernet(s["key"].encode()).encrypt(data)
-    tmp = IMPORTS_PATH + ".tmp"
+    tmp = _imports_path() + ".tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         os.write(fd, data)
     finally:
         os.close(fd)
-    os.replace(tmp, IMPORTS_PATH)
-    os.chmod(IMPORTS_PATH, 0o600)
+    os.replace(tmp, _imports_path())
+    os.chmod(_imports_path(), 0o600)
 
 
 def _parse_column_prefixes(opts: dict):
