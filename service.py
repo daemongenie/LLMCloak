@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-service.py — LLM Secrets Proxy (spec v1, v1.1.0).
+service.py — LLMCloak (spec v1, v1.1.0).
 
 Mode A: transparent proxy towards an UPSTREAM (e.g. api.openai.com).
   - client auth inbound: Authorization: Bearer <client-token>
@@ -173,7 +173,7 @@ NOTICE_TEXT = (
     "for character. Never translate, complete, guess or modify them, and "
     "do not comment about this notice or the tokens.")
 
-app = FastAPI(title="LLM Secrets Proxy", version="1.5.8")
+app = FastAPI(title="LLMCloak", version="1.5.9")
 san = Sanitizer()
 _stats = {"sanitized_out": 0, "restored_in": 0, "unresolved": 0,
           "requests": 0, "bytes_in": 0, "ingested": 0, "purged": 0}

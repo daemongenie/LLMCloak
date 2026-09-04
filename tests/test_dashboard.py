@@ -125,7 +125,7 @@ def test_01_dashboard_page_served():
     c = _reset()
     r = c.get("/dashboard")
     assert r.status_code == 200
-    assert "Secrets Proxy" in r.text
+    assert "LLMCloak" in r.text
     assert r.headers.get("x-frame-options") == "DENY"
     assert "no-store" in r.headers.get("cache-control", "")
     # UI must not contain secrets
@@ -367,7 +367,7 @@ def test_14_dashboard_not_proxied():
     try:
         svc.UPSTREAM = "http://127.0.0.1:1"   # catch-all attivo (irraggiungibile)
         r = c.get("/dashboard")
-        assert r.status_code == 200 and "Secrets Proxy" in r.text
+        assert r.status_code == 200 and "LLMCloak" in r.text
         # state without session -> 401 from the DASHBOARD (session), not the proxy
         r = c.get("/dashboard/api/state")
         assert r.status_code == 401

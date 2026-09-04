@@ -14,7 +14,7 @@
 # limitations under the License.
 
 """
-vaultctl.py — headless management CLI for the LLM Secrets Proxy (v1.1.0).
+vaultctl.py — headless management CLI for LLMCloak (v1.1.0).
 
 Service control (HTTP against /admin/*, default http://127.0.0.1:8917):
   status                      service state (locked/active, counters)
@@ -273,7 +273,7 @@ def cmd_decrypt(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="vaultctl",
-                                description="LLM Secrets Proxy management CLI")
+                                description="LLMCloak management CLI")
     p.add_argument("--admin-token", default=os.environ.get("SECRETS_PROXY_API_KEY", ""),
                    help="admin token (default: env SECRETS_PROXY_API_KEY)")
     p.add_argument("--passphrase", default=None,

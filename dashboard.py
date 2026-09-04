@@ -336,7 +336,7 @@ _HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Secrets Proxy — Dashboard</title>
+<title>LLMCloak — Dashboard</title>
 <style>
  :root{--bg:#0f1420;--card:#171e2e;--card2:#1d2639;--fg:#e8ecf4;--mut:#93a0b8;
        --acc:#4f8cff;--ok:#3ecf8e;--warn:#f5b544;--err:#ff6b6b;--line:#28324a}
@@ -393,7 +393,7 @@ _HTML = r"""<!DOCTYPE html>
 <!-- ============ LOGIN (always at every app start) ============ -->
 <div id="login" class="wrap center">
   <div class="card">
-    <div class="row"><span class="logo">SP</span><div><h1>Secrets Proxy</h1>
+    <div class="row"><span class="logo">LC</span><div><h1>LLMCloak</h1>
       <div class="sub" style="margin:0">Vault management dashboard</div></div></div>
     <div style="margin-top:18px">
       <label style="color:var(--mut);font-size:13px">Passphrase</label><br>
@@ -415,7 +415,7 @@ _HTML = r"""<!DOCTYPE html>
 <!-- ====== SETUP FIRST RUN (vault absent) ====== -->
 <div id="setup" class="wrap center hidden">
   <div class="card">
-    <div class="row"><span class="logo">SP</span><div><h1>Secrets Proxy</h1>
+    <div class="row"><span class="logo">LC</span><div><h1>LLMCloak</h1>
       <div class="sub" style="margin:0">First run — create your passphrase</div></div></div>
     <div style="margin-top:18px">
       <label style="color:var(--mut);font-size:13px">New passphrase</label><br>
@@ -441,8 +441,8 @@ _HTML = r"""<!DOCTYPE html>
 <!-- ============ APP ============ -->
 <div id="app" class="wrap hidden">
   <div class="row" style="justify-content:space-between">
-    <div class="row"><span class="logo">SP</span>
-      <div><h1 style="margin:0">Secrets Proxy</h1>
+    <div class="row"><span class="logo">LC</span>
+      <div><h1 style="margin:0">LLMCloak</h1>
       <div class="sub" style="margin:0" id="hdr-sub"></div></div>
     </div>
     <div class="row">

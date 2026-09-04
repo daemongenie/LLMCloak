@@ -151,7 +151,7 @@ verso l'LLM e **ripristinata** verso di te: tutto funziona.
 ```ini
 # /etc/systemd/system/secrets-proxy.service
 [Unit]
-Description=LLM Secrets Proxy
+Description=LLMCloak
 After=network.target
 
 [Service]

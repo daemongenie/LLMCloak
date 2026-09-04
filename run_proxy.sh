@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_proxy.sh — LLM Secrets Proxy management (v1.1.0) for testing and headless
+# run_proxy.sh — LLMCloak management (v1.1.0) for testing and headless
 # deployment
 #
 # Usage:

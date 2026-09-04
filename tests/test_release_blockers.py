@@ -182,7 +182,7 @@ def test_rb1_dashboard_html_english_only():
     hits, lan, sec = _scan(r.text)
     assert not hits, f"dashboard UI Italian text: {hits}"
     assert not lan and not sec
-    assert "Secrets Proxy" in r.text
+    assert "LLMCloak" in r.text
 
 
 # --------------------------------------------------------------------------
