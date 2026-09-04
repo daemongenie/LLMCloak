@@ -2,6 +2,7 @@
 fastapi>=0.110
 uvicorn>=0.29
 cryptography>=41.0
+python-multipart>=0.0.20  # required: dashboard CSV import (form parsing)
 # optional: high-performance egress index (falls back to pure-python scan if missing)
 pyahocorasick>=2.0
 
