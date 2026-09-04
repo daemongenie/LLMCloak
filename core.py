@@ -490,15 +490,34 @@ a plain file loads as-is even when master_key is set.
                         count += nn
             # no-leak check: no secret must survive (single AC scan when
             # available; identical threshold: only len>=4 secrets are fatal)
+            # v1.5.9-hotfix (field, .222): occurrences INSIDE our own minted
+            # tags are not leaks. With CSV-ingested vaults a tag core or a
+            # column prefix can contain a string that is itself a vault
+            # value (e.g. a numeric ID colliding with an HMAC hex core, or
+            # a cell equal to a header-derived family like EMAIL_): the raw
+            # scan then sees a phantom residual inside the tag and
+            # fail-closes EVERY proxied LLM request (RuntimeError -> 500,
+            # surfaced client-side as 'OpenRouter error 500'). Mask
+            # tag-shaped spans on a scan-only copy; any occurrence OUTSIDE
+            # our tags stays fatal (fail-closed preserved).
+            scan = out
+            with self._lock:
+                fams = set(self._get_fams()) | set(self._session_fams)
+            fams.add(TAG_PREFIX)
+            if len(fams) > 1:
+                mrx = re.compile(
+                    "(?:" + "|".join(re.escape(f) for f in sorted(fams))
+                    + r")[0-9a-f]{8,24}")
+                scan = mrx.sub(" ", scan)
             resid = None
             if self._ac is not None:
-                for _, s in self._ac.iter(out):
+                for _, s in self._ac.iter(scan):
                     if len(s) >= 4:
                         resid = s
                         break
             else:
                 for s in self._values:
-                    if len(s) >= 4 and s in out:
+                    if len(s) >= 4 and s in scan:
                         resid = s
                         break
             if resid is not None:
