@@ -880,7 +880,7 @@ function renderColPicker() {
     lab.style.cssText = "display:flex;align-items:center;gap:4px;background:#181818;padding:4px 8px;border-radius:6px";
     const name = String(h || ("col " + j)).slice(0, 28);
     let auto = (String(h || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "").slice(0, 14) + "_");
+      .replace(/^_+|_+$/g, "").slice(0, 14).replace(/_+$/, "") + "_");
     if (!/^[A-Z][A-Z0-9_]{0,15}_$/.test(auto)) auto = "";
     lab.innerHTML = '<input type="checkbox" id="' + id + '" data-col="' + j + '" checked> ' +
       esc(name) + ' <input type="text" class="csv-colprefix" data-col="' + j +
@@ -934,7 +934,7 @@ function selectedCols() {
   return sel.join(",");
 }
 function validPrefix(p) {
-  return p === "" || /^[A-Z][A-Z0-9_]{0,15}_$/.test(p);
+  return p === "" || /^[A-Z](?:[A-Z0-9]|_(?!_)){0,15}_$/.test(p);  // strict: no "__" (server rule v1.5.0)
 }
 function columnPrefixes() {
   const out = [];
