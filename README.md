@@ -132,7 +132,7 @@ per request** (details and methodology in [BENCH_REPORT.md](BENCH_REPORT.md)).
 
 ## Status
 
-- Current version: **v1.5.9** — short changelog in the git log.
+- Current version: **v1.5.11** — short changelog in the git log.
 - Designed for Linux, tested on Debian; runs anywhere Python 3.10+ is available.
 
 ## License

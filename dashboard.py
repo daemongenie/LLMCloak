@@ -329,7 +329,7 @@ def verify_passphrase(vault_path: str, salt_path: str,
 
 
 # -------------------------------------------------------------------------- #
-#  UI HTML (self-contained: zero dipendenze esterne, nessun CDN)             #
+#  UI HTML (self-contained: zero external dependencies, no CDN)              #
 # -------------------------------------------------------------------------- #
 _HTML = r"""<!DOCTYPE html>
 <html lang="en">

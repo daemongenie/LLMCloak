@@ -44,11 +44,11 @@ sys.path.insert(0, str(_PKG_HOME))
 
 # isolated env BEFORE the service import
 _TMPDIR = tempfile.mkdtemp(prefix="sp_rblock_test_")
-os.environ["SECRETS_PROXY_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
-os.environ["SECRETS_PROXY_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
-os.environ["SECRETS_PROXY_API_KEY"] = "rb-test-admin"
-os.environ["SECRETS_PROXY_UPSTREAM"] = ""
-os.environ.pop("SECRETS_PROXY_KEY", None)
+os.environ["LLMCLOAK_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
+os.environ["LLMCLOAK_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
+os.environ["LLMCLOAK_API_KEY"] = "rb-test-admin"
+os.environ["LLMCLOAK_UPSTREAM"] = ""
+os.environ.pop("LLMCLOAK_KEY", None)
 
 from cryptography.fernet import Fernet        # noqa: E402
 from fastapi.testclient import TestClient     # noqa: E402

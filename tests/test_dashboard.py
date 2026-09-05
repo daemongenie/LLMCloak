@@ -48,14 +48,14 @@ import pytest
 _PKG_HOME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PKG_HOME))
 
-# env ISOLATO prima dell'import del servizio (e2e_test potrebbe aver
-# impostato SECRETS_PROXY_UPSTREAM durante la collection)
+# ISOLATED env before the service import (e2e_test may have set
+# LLMCLOAK_UPSTREAM during collection)
 _TMPDIR = tempfile.mkdtemp(prefix="sp_dash_test_")
-os.environ["SECRETS_PROXY_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
-os.environ["SECRETS_PROXY_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
-os.environ["SECRETS_PROXY_API_KEY"] = "dash-test-admin"
-os.environ["SECRETS_PROXY_UPSTREAM"] = ""
-os.environ.pop("SECRETS_PROXY_KEY", None)
+os.environ["LLMCLOAK_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
+os.environ["LLMCLOAK_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
+os.environ["LLMCLOAK_API_KEY"] = "dash-test-admin"
+os.environ["LLMCLOAK_UPSTREAM"] = ""
+os.environ.pop("LLMCLOAK_KEY", None)
 
 from cryptography.fernet import Fernet                      # noqa: E402
 from fastapi.testclient import TestClient                   # noqa: E402
@@ -64,11 +64,11 @@ import dashboard as dash                 # noqa: E402
 import service as svc                    # noqa: E402
 
 # Import-order isolation: other test modules may have imported 'service'
-# first with a different SECRETS_PROXY_API_KEY (the module reads ADMIN_KEY
+# first with a different LLMCLOAK_API_KEY (the module reads ADMIN_KEY
 # once at import). Re-align the admin key to THIS module, otherwise in the
 # full suite /admin/* answers 403.
-if os.environ.get("SECRETS_PROXY_API_KEY", "") != svc.ADMIN_KEY:
-    svc.ADMIN_KEY = os.environ.get("SECRETS_PROXY_API_KEY", "")
+if os.environ.get("LLMCLOAK_API_KEY", "") != svc.ADMIN_KEY:
+    svc.ADMIN_KEY = os.environ.get("LLMCLOAK_API_KEY", "")
 from core import derive_key, load_or_create_salt  # noqa: E402
 
 ADMIN = {"X-Admin-Token": "dash-test-admin"}
@@ -88,7 +88,7 @@ def _make_vault(encrypted: bool, passphrase: str = PW,
         f"provider:default={PROVIDER_KEY}",
         SECRET_A,
         SECRET_B,
-        "# commento che deve restare",
+        "# comment that must remain",
     ]
     data = ("\n".join(lines) + "\n").encode()
     if encrypted:
@@ -117,8 +117,8 @@ def _reset(encrypted: bool = True) -> TestClient:
     svc.san.lock()
     dash.SESSIONS.drop_all()
     _make_vault(encrypted)
-    # il servizio riparte LOCKED come a un avvio reale (niente startup event
-    # ripetibile: simuliamo lo stato locked esplicitamente)
+    # the service starts LOCKED like at a real startup (no repeatable
+    # startup event: we simulate the locked state explicitly)
     return TestClient(svc.app)
 
 
@@ -151,11 +151,11 @@ def test_02_api_requires_session():
 
 def test_03_login_wrong_passphrase():
     c = _reset(encrypted=True)
-    r = _login(c, "passphrase-sbagliata")
+    r = _login(c, "wrong-passphrase")
     assert r.status_code == 401
     assert dash.SESSION_COOKIE not in (r.headers.get("set-cookie") or "")
     assert dash.SESSIONS.count() == 0
-    # il servizio resta locked
+    # the service stays locked
     h = c.get("/health").json()
     assert h["status"] == "locked"
 
@@ -189,7 +189,7 @@ def test_05_entries_never_plaintext():
     named = [e for e in entries if e["kind"] == "named"]
     assert all(e["value"] is None and e["masked"] for e in named)
     assert any(e["name"] == "client:default" for e in named)
-    # maschera: primi 3 + ... + ultimi 2
+    # mask: first 3 + ... + last 2
     m = [e["masked"] for e in entries if e["kind"] == "secret" and SECRET_A.startswith(e["masked"][:3])]
     assert m and "…" in m[0]
 
@@ -202,7 +202,7 @@ def test_06_add_entries_file_encrypted():
                      "value": "sk-second-key-999"})
     assert r.status_code == 200, r.text
     r = c.post("/dashboard/api/entries",
-               json={"kind": "secret", "value": "nuovo-secret-xyz"})
+               json={"kind": "secret", "value": "new-secret-xyz"})
     assert r.status_code == 200
     r = c.post("/dashboard/api/entries",
                json={"kind": "pattern", "value": "ghp_[a-zA-Z0-9]{36}"})
@@ -214,9 +214,9 @@ def test_06_add_entries_file_encrypted():
     # content decryptable with the key derived from the passphrase
     plain = _decrypt_file()
     assert "provider:secondary=sk-second-key-999" in plain
-    assert "nuovo-secret-xyz" in plain
+    assert "new-secret-xyz" in plain
     assert "re:ghp_[a-zA-Z0-9]{36}" in plain
-    assert "# commento che deve restare" in plain
+    assert "# comment that must remain" in plain
     # service reloaded: sanitize sees the new secrets
     r = c.post("/sanitize", headers={"Authorization": f"Bearer {CLIENT_TOKEN}"},
                json={"text": "key sk-second-key-999 in use"})
@@ -227,17 +227,17 @@ def test_06_add_entries_file_encrypted():
 def test_07_duplicates_rejected():
     c = _reset()
     assert _login(c).status_code == 200
-    # riga identica
+    # identical line
     assert c.post("/dashboard/api/entries",
                   json={"kind": "secret", "value": SECRET_A}).status_code == 409
-    # stesso nome nominata
+    # same named-entry name
     assert c.post("/dashboard/api/entries",
                   json={"kind": "named", "name": "client:default",
-                        "value": "altro-token"}).status_code == 409
-    # valore uguale a una nominata esistente
+                        "value": "other-token"}).status_code == 409
+    # value equal to an existing named entry
     assert c.post("/dashboard/api/entries",
                   json={"kind": "secret", "value": PROVIDER_KEY}).status_code == 409
-    # stessa regex
+    # same regex
     c.post("/dashboard/api/entries",
            json={"kind": "pattern", "value": "AKIA[0-9A-Z]{16}"})
     assert c.post("/dashboard/api/entries",
@@ -247,16 +247,16 @@ def test_07_duplicates_rejected():
 def test_08_salt_preserved_tags_stable():
     c = _reset()
     assert _login(c).status_code == 200
-    text = f"la pwd e' {SECRET_A} grazie"
+    text = f"my password is {SECRET_A} thanks"
     r1 = c.post("/sanitize", headers={"Authorization": f"Bearer {CLIENT_TOKEN}"},
                 json={"text": text}).json()
     assert r1["replaced"] == 1 and "PWD_" in r1["text"]
-    tag = r1["text"].replace("la pwd e' ", "").replace(" grazie", "")
-    # CRUD: aggiunta + rimozione di una voce qualsiasi
-    c.post("/dashboard/api/entries", json={"kind": "secret", "value": "tmp-vocex"})
+    tag = r1["text"].replace("my password is ", "").replace(" thanks", "")
+    # CRUD: add + remove of an arbitrary entry
+    c.post("/dashboard/api/entries", json={"kind": "secret", "value": "tmp-entry"})
     r2 = c.post("/sanitize", headers={"Authorization": f"Bearer {CLIENT_TOKEN}"},
                 json={"text": text}).json()
-    assert r2["text"] == r1["text"], "salt cambiato: tag non stabile!"
+    assert r2["text"] == r1["text"], "salt changed: tag not stable!"
     # desanitize still restores the secret (consistent reverse-map)
     r3 = c.post("/desanitize", headers={"Authorization": f"Bearer {CLIENT_TOKEN}"},
                 json={"text": r2["text"]}).json()
@@ -274,15 +274,15 @@ def test_09_edit_entry():
     assert r.status_code == 200, r.text
     plain = _decrypt_file()
     assert "secret-changed-777" in plain and SECRET_A not in plain
-    # edit nominata: valore sostituito
+    # edit named entry: value replaced
     eid_named = [e["id"] for e in c.get("/dashboard/api/state").json()["entries"]
                  if e["kind"] == "named" and e["name"] == "provider:default"][0]
     r = c.put(f"/dashboard/api/entries/{eid_named}",
               json={"value": "sk-provider-new-key"})
     assert r.status_code == 200
     assert "provider:default=sk-provider-new-key" in _decrypt_file()
-    # il servizio usa il nuovo valore (iniezione provider)
-    # (verifica indiretta: sanitize non deve piu' mascherare il vecchio)
+    # the service uses the new value (provider injection)
+    # (indirect check: sanitize must no longer mask the old value)
     r = c.post("/sanitize", headers={"Authorization": f"Bearer {CLIENT_TOKEN}"},
                json={"text": "sk-provider-new-key"})
     assert "sk-provider-new-key" not in r.json()["text"]
@@ -299,27 +299,28 @@ def test_10_delete_entry_tag_unresolved():
     assert c.delete(f"/dashboard/api/entries/{eid}").status_code == 200
     plain = _decrypt_file()
     assert SECRET_A not in plain
-    # il vecchio tag non e' piu' risolvibile (fail-safe: resta tag, audit)
+    # the old tag is no longer resolvable (fail-safe: tag stays, audit)
     r = c.post("/desanitize", headers={"Authorization": f"Bearer {CLIENT_TOKEN}"},
                json={"text": tag}).json()
     assert r["restored"] == 0 and r["unresolved"]
 
 
 def test_10b_auth_passthrough_no_provider_check():
-    """v1.2.8: il check su provider:default e' RIMOSSO — auth passthrough.
-    La richiesta /v1/* non fallisce piu' con 503 'provider:default mancante':
-    con upstream irraggiungibile l'errore e' di connessione, non di vault."""
+    """v1.2.8: the provider:default check is REMOVED — auth passthrough.
+    A /v1/* request no longer fails with 503 'missing provider:default':
+    with an unreachable upstream the error is a connection error, not a
+    vault error."""
     from fastapi.testclient import TestClient
     c = _reset()
     assert _login(c).status_code == 200
-    # nessuna voce provider:* nel vault (resta solo client:*)
+    # no provider:* entry in the vault (only client:* remains)
     ents = c.get("/dashboard/api/state").json()["entries"]
     for e in ents:
         if e["kind"] == "named" and (e.get("name") or "").startswith("provider:"):
             assert c.delete(f"/dashboard/api/entries/{e['id']}").status_code == 200
     hdr = {"Authorization": f"Bearer {CLIENT_TOKEN}"}
     old_up = svc.UPSTREAM
-    svc.UPSTREAM = "http://127.0.0.1:9"   # porta discard: irraggiungibile
+    svc.UPSTREAM = "http://127.0.0.1:9"   # discard port: unreachable
     try:
         c2 = TestClient(svc.app, raise_server_exceptions=False)
         r = c2.get("/v1/models", headers=hdr)
@@ -336,7 +337,7 @@ def test_11_plain_vault_encrypt_now():
     assert r.status_code == 200
     st = c.get("/dashboard/api/state").json()
     assert st["vault_encrypted"] is False
-    # fino a qui il file resta plain (nessuna scrittura a sorpresa)
+    # until here the file stays plain (no surprise write)
     assert _file_is_encrypted() is False
     r = c.post("/dashboard/api/encrypt")
     assert r.status_code == 200
@@ -344,7 +345,7 @@ def test_11_plain_vault_encrypt_now():
     assert SECRET_A in _decrypt_file()
     st = c.get("/dashboard/api/state").json()
     assert st["vault_encrypted"] is True and st["service"] == "active"
-    # encrypt doppio -> 400
+    # double encrypt -> 400
     assert c.post("/dashboard/api/encrypt").status_code == 400
 
 
@@ -366,26 +367,26 @@ def test_13_lock_drops_sessions():
 
 
 def test_14_dashboard_not_proxied():
-    """Con upstream attivo, /dashboard e /dashboard/api/* NON finiscono nel
-    catch-all proxy (sono route esplicite registrate prima); il catch-all
-    resta comunque vivo per i path LLM arbitrari."""
+    """With an active upstream, /dashboard and /dashboard/api/* do NOT end up
+    in the proxy catch-all (they are explicit routes registered before it);
+    the catch-all stays alive anyway for arbitrary LLM paths."""
     c = _reset()
     old = svc.UPSTREAM
     try:
-        svc.UPSTREAM = "http://127.0.0.1:1"   # catch-all attivo (irraggiungibile)
+        svc.UPSTREAM = "http://127.0.0.1:1"   # active catch-all (unreachable)
         r = c.get("/dashboard")
         assert r.status_code == 200 and "LLMCloak" in r.text
         # state without session -> 401 from the DASHBOARD (session), not the proxy
         r = c.get("/dashboard/api/state")
         assert r.status_code == 401
         assert "session" in r.json()["detail"]
-        # il catch-all proxy e' ancora registrato: fail-closed senza vault
+        # the proxy catch-all is still registered: fail-closed without vault
         r = c.get("/some/llm/path")
         assert r.status_code == 503
-        # ...e con servizio attivo chiede l'auth client (non tocca la dashboard)
+        # ...and with the service active it requires client auth (not the dashboard)
         assert _login(c).status_code == 200
         r = c.get("/some/llm/path",
-                  headers={"Authorization": "Bearer token-sbagliato"})
+                  headers={"Authorization": "Bearer wrong-token"})
         assert r.status_code == 401
         assert r.json()["detail"] == "invalid client token"
     finally:
@@ -440,9 +441,9 @@ def test_17_show_tag_without_plaintext():
     tag = r.json()["tag"]
     assert tag.startswith("PWD_") and len(tag) > len("PWD_")
     assert CLIENT_TOKEN not in r.text
-    # pattern: nessun tag fisso
+    # pattern: no fixed tag
     eid_p = [e["id"] for e in st["entries"] if e["kind"] == "pattern"]
-    assert not eid_p   # il vault di default non ha pattern
+    assert not eid_p   # the default vault has no pattern
     c.post("/dashboard/api/entries", json={"kind": "pattern", "value": "x[0-9]+"})
     st = c.get("/dashboard/api/state").json()
     eid_p = [e["id"] for e in st["entries"] if e["kind"] == "pattern"][0]
@@ -456,16 +457,16 @@ def test_18_plain_vault_auto_encrypt_on_first_write():
     assert _login(c).status_code == 200
     assert _file_is_encrypted() is False
     r = c.post("/dashboard/api/entries",
-               json={"kind": "secret", "value": "prima-scrittura-cifra"})
+               json={"kind": "secret", "value": "first-write-encrypt"})
     assert r.status_code == 200, r.text
-    assert _file_is_encrypted() is True, "la prima scrittura deve cifrare"
+    assert _file_is_encrypted() is True, "the first write must encrypt"
     plain = _decrypt_file()
-    assert "prima-scrittura-cifra" in plain and SECRET_A in plain
+    assert "first-write-encrypt" in plain and SECRET_A in plain
     # the session passphrase is now the permanent unlock passphrase
     c2 = _reset(encrypted=True)   # file already encrypted: correct passphrase needed
     assert _login(c2).status_code == 200
     wrong = _reset(encrypted=True)
-    assert _login(wrong, "altra-passphrase").status_code == 401
+    assert _login(wrong, "another-passphrase").status_code == 401
     # delete su vault plain cifra anch'esso
     c3 = _reset(encrypted=False)
     assert _login(c3).status_code == 200
@@ -485,9 +486,9 @@ def test_18_plain_vault_auto_encrypt_on_first_write():
     tag = r.json()["tag"]
     assert tag.startswith("PWD_") and len(tag) > len("PWD_")
     assert CLIENT_TOKEN not in r.text
-    # pattern: nessun tag fisso
+    # pattern: no fixed tag
     eid_p = [e["id"] for e in st["entries"] if e["kind"] == "pattern"]
-    assert not eid_p   # il vault di default non ha pattern
+    assert not eid_p   # the default vault has no pattern
     c.post("/dashboard/api/entries", json={"kind": "pattern", "value": "x[0-9]+"})
     st = c.get("/dashboard/api/state").json()
     eid_p = [e["id"] for e in st["entries"] if e["kind"] == "pattern"][0]
@@ -499,7 +500,7 @@ NEWPW = "FirstUse-NewP@ss-99"
 
 
 def _wipe_vault() -> None:
-    """Simula il PRIMO utilizzo: nessun vault su disco."""
+    """Simulates FIRST use: no vault on disk."""
     svc.san.lock()
     dash.SESSIONS.drop_all()
     for f in (svc.VAULT_PATH, svc.KDF_SALT_PATH):
@@ -508,19 +509,19 @@ def _wipe_vault() -> None:
 
 
 def test_19_mode_endpoint():
-    # vault assente -> setup
+    # vault missing -> setup
     _wipe_vault()
     c = TestClient(svc.app)
     m = c.get("/dashboard/api/mode").json()
     assert m["mode"] == "setup" and m["vault_exists"] is False
-    # login su vault assente -> 409 con invito al setup
+    # login on missing vault -> 409 with setup invite
     r = c.post("/dashboard/api/session", json={"passphrase": PW})
     assert r.status_code == 409 and "setup" in r.json()["detail"]  # first-run invite kept EN
     # encrypted vault locked -> locked
     _make_vault(encrypted=True)
     m = c.get("/dashboard/api/mode").json()
     assert m["mode"] == "locked" and m["vault_encrypted"] is True
-    # dopo login -> active
+    # after login -> active
     assert _login(c).status_code == 200
     assert c.get("/dashboard/api/mode").json()["mode"] == "active"
 
@@ -543,11 +544,11 @@ def test_20_setup_fresh_vault():
     assert c.get("/health").json()["status"] == "active"
     st = c.get("/dashboard/api/state")
     assert st.status_code == 200 and st.json()["entries"] == []
-    # mode ora active; ri-login con la NUOVA passphrase dopo lock
+    # mode now active; re-login with the NEW passphrase after lock
     assert c.get("/dashboard/api/mode").json()["mode"] == "active"
     assert c.post("/dashboard/api/lock").status_code == 200
     assert _login(c, NEWPW).status_code == 200
-    assert _login(c, PW).status_code == 401   # la vecchia non vale
+    assert _login(c, PW).status_code == 401   # the old one is not valid
 
 
 def test_21_setup_validations():
@@ -557,25 +558,25 @@ def test_21_setup_validations():
     r = c.post("/dashboard/api/setup",
                json={"passphrase": NEWPW, "confirm": NEWPW})
     assert r.status_code == 409
-    # conferma errata -> 400
+    # wrong confirm -> 400
     _wipe_vault()
     c = TestClient(svc.app)
     r = c.post("/dashboard/api/setup",
-               json={"passphrase": NEWPW, "confirm": "diversa-12345"})
+               json={"passphrase": NEWPW, "confirm": "different-12345"})
     assert r.status_code == 400 and "do not match" in r.json()["detail"]
-    assert not os.path.exists(svc.VAULT_PATH)   # niente scritto
-    # troppo corta -> 400
+    assert not os.path.exists(svc.VAULT_PATH)   # nothing written
+    # too short -> 400
     r = c.post("/dashboard/api/setup",
-               json={"passphrase": "corta", "confirm": "corta"})
+               json={"passphrase": "short", "confirm": "short"})
     assert r.status_code == 400 and "8" in r.json()["detail"]
     assert not os.path.exists(svc.VAULT_PATH)
 
 
 def test_22_setup_preserves_plain_entries():
-    # vault plain esistente (caso legacy): setup conserva le voci
+    # existing plain vault (legacy case): setup preserves the entries
     _wipe_vault()
     plain = ["client:default=tok-setup-1", "provider:default=sk-setup",
-             "segreto-a-1", "# comment"]
+             "secret-a-1", "# comment"]
     with open(svc.VAULT_PATH, "w") as f:
         f.write("\n".join(plain) + "\n")
     os.chmod(svc.VAULT_PATH, 0o600)
@@ -588,9 +589,9 @@ def test_22_setup_preserves_plain_entries():
     assert _file_is_encrypted() is True
     content = _decrypt_file(NEWPW)
     for ln in ("client:default=tok-setup-1", "provider:default=sk-setup",
-               "segreto-a-1", "# comment"):
+               "secret-a-1", "# comment"):
         assert ln in content
-    # servizio caricato con le voci conservate
+    # service loaded with the preserved entries
     h = c.get("/health").json()
     assert h["status"] == "active" and h["secrets"] == 1 and h["named"] == 2
 
@@ -621,7 +622,7 @@ def test_30_auto_unlock_enable_disable_api():
     st = c.get("/dashboard/api/state").json()
     assert st["auto_unlock"] is True
     assert c.get("/dashboard/api/auto-unlock").json()["enabled"] is True
-    # disable + idempotente
+    # disable + idempotent
     r = c.post("/dashboard/api/auto-unlock", json={"enable": False})
     assert r.status_code == 200 and r.json()["enabled"] is False
     assert not os.path.exists(AU)
@@ -643,12 +644,12 @@ def test_32_auto_unlock_machine_guard_and_corruption(monkeypatch):
     assert c.post("/dashboard/api/auto-unlock",
                   json={"enable": True}).status_code == 200
     mk = _master_key()
-    monkeypatch.setattr(dash, "_machine_secret", lambda: b"altra-macchina")
-    assert dash.auto_unlock_key(svc.VAULT_PATH) is None, "macchina diversa"
+    monkeypatch.setattr(dash, "_machine_secret", lambda: b"another-machine")
+    assert dash.auto_unlock_key(svc.VAULT_PATH) is None, "different machine"
     monkeypatch.undo()
     open(AU, "w").write(
         '{"v":1,"wrap_salt":"AAAA","wrapped":"gAAAAA-broken","machine_sha":"x"}')
-    assert dash.auto_unlock_key(svc.VAULT_PATH) is None, "file corrotto"
+    assert dash.auto_unlock_key(svc.VAULT_PATH) is None, "corrupted file"
     assert c.post("/dashboard/api/auto-unlock",
                   json={"enable": True}).status_code == 200
     assert dash.auto_unlock_key(svc.VAULT_PATH) == mk
@@ -660,14 +661,14 @@ def test_33_auto_unlock_startup_simulation():
     assert c.post("/dashboard/api/auto-unlock",
                   json={"enable": True}).status_code == 200
     c.delete("/dashboard/api/session")
-    # simulazione riavvio: RAM scartata, poi percorso identico a _startup
+    # restart simulation: RAM discarded, then path identical to _startup
     svc.san.lock()
     dash.SESSIONS.drop_all()
     assert not svc.san.is_loaded()
     svc._try_auto_unlock()
-    assert svc.san.is_loaded(), "auto-unlock all'avvio"
+    assert svc.san.is_loaded(), "auto-unlock at startup"
     lines, _ = dash.vault_lines(svc.VAULT_PATH, _master_key())
-    assert SECRET_A in "\n".join(lines), "voci integre dopo auto-unlock"
+    assert SECRET_A in "\n".join(lines), "entries intact after auto-unlock"
     svc.san.lock()
 
 
@@ -695,18 +696,18 @@ def test_35_whitelist_ip_enforce():
     saved = list(svc.TRUSTED_IPS)
     try:
         svc.TRUSTED_IPS = []
-        # vuota: tutte le sorgenti
+        # empty: all sources
         svc._ip_allowed(_req("8.8.8.8"))
         svc._ip_allowed(_req(""))
         svc.TRUSTED_IPS = ["192.0.2.0/24", "10.0.0.5"]
-        svc._ip_allowed(_req("192.0.2.55"))    # dentro CIDR
-        svc._ip_allowed(_req("10.0.0.5"))        # IP singolo
+        svc._ip_allowed(_req("192.0.2.55"))    # inside CIDR
+        svc._ip_allowed(_req("10.0.0.5"))        # single IP
         with pytest.raises(Exception):
-            svc._ip_allowed(_req("10.0.0.6"))    # fuori
+            svc._ip_allowed(_req("10.0.0.6"))    # outside
         with pytest.raises(Exception):
-            svc._ip_allowed(_req(""))            # sorgente sconosciuta: fail-closed
+            svc._ip_allowed(_req(""))            # unknown source: fail-closed
         with pytest.raises(Exception):
-            svc._ip_allowed(_req("non-e-un-ip"))
+            svc._ip_allowed(_req("not-an-ip"))
     finally:
         svc.TRUSTED_IPS = saved
 
@@ -716,18 +717,18 @@ def test_36_whitelist_ip_api_and_persist():
     assert _login(c).status_code == 200
     st = c.get("/dashboard/api/state").json()
     assert st["trusted_ips"] == []
-    # IP non valido -> 400
+    # invalid IP -> 400
     r = c.post("/dashboard/api/trusted-ips",
-               json={"ips": ["127.0.0.1", "pippo"]})
+               json={"ips": ["127.0.0.1", "not-an-ip"]})
     assert r.status_code == 400
-    # lista valida -> persistita nel file config isolato del test
+    # valid list -> persisted in the isolated test config file
     r = c.post("/dashboard/api/trusted-ips",
                json={"ips": ["192.0.2.10", "10.0.0.0/8"]})
     assert r.status_code == 200 and r.json()["persisted"] is True
     assert r.json()["trusted_ips"] == ["192.0.2.10", "10.0.0.0/8"]
     cfg = json.load(open(svc.CONFIG_PATH))
     assert cfg["trusted_ips"] == ["192.0.2.10", "10.0.0.0/8"]
-    # GET coerente + svuotamento
+    # consistent GET + emptying
     assert c.get("/dashboard/api/trusted-ips").json()["trusted_ips"] == \
         ["192.0.2.10", "10.0.0.0/8"]
     r = c.post("/dashboard/api/trusted-ips", json={"ips": []})
@@ -747,7 +748,7 @@ def test_18_endpoints_picker():
     eps0 = r.json()["endpoints"]
     assert isinstance(eps0, list)
 
-    # add: ok, duplicato -> 400, schema invalido -> 400
+    # add: ok, duplicate -> 400, invalid schema -> 400
     r = c.post("/dashboard/api/endpoints/add", json={"url": "http://x:1"})
     assert r.status_code == 200 and "http://x:1" in r.json()["endpoints"]
     assert c.post("/dashboard/api/endpoints/add",
@@ -757,14 +758,14 @@ def test_18_endpoints_picker():
     eps = c.get("/dashboard/api/endpoints").json()["endpoints"]
     assert eps.count("http://x:1") == 1
 
-    # select: attivo aggiornato + visibile da /dashboard/api/upstream
+    # select: active updated + visible from /dashboard/api/upstream
     r = c.post("/dashboard/api/endpoints/select", json={"url": "http://x:1"})
     assert r.status_code == 200 and r.json()["upstream"] == "http://x:1"
     assert c.get("/dashboard/api/upstream").json()["upstream"] == "http://x:1"
     assert c.post("/dashboard/api/endpoints/select",
-                  json={"url": "http://assente:9"}).status_code == 404
+                  json={"url": "http://missing:9"}).status_code == 404
 
-    # delete dell'attivo -> fallback al primo rimasto (o nessuno)
+    # delete of the active one -> fallback to the first remaining (or none)
     r = c.post("/dashboard/api/endpoints/delete", json={"url": "http://x:1"})
     assert r.status_code == 200
     body = r.json()
@@ -777,7 +778,7 @@ def test_18_endpoints_picker():
     assert c.post("/dashboard/api/endpoints/delete",
                   json={"url": "http://x:1"}).status_code == 404
 
-    # persistenza nel config
+    # persistence in the config
     cfg = json.load(open(svc.CONFIG_PATH))
     assert "http://x:1" not in (cfg.get("endpoints") or [])
     if cfg.get("upstream"):

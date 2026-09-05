@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Suite test obbligatoria — spec v1 sez. 7.
-Run (relocabile):
+"""Mandatory test suite — spec v1 section 7.
+Run (relocatable):
   python3 -m pytest tests/ -v
-I test localizzano il pacchetto dalla propria posizione; in alternativa si puo'
-puntare un layout esterno con:
-  SECRETS_PROXY_HOME=/dir/del/codice python3 -m pytest ...
+The tests locate the package from their own location; alternatively point to
+an external layout with:
+  LLMCLOAK_HOME=/dir/of/the/code python3 -m pytest ...
 """
 import json
 import os
@@ -28,10 +28,10 @@ from pathlib import Path
 
 import pytest
 
-# Home del pacchetto: SECRETS_PROXY_HOME se impostata, altrimenti
+# Home del pacchetto: LLMCLOAK_HOME se impostata, altrimenti
 # derivata dalla posizione del file test (parent del pacchetto).
 _PKG_HOME = Path(os.environ.get(
-    "SECRETS_PROXY_HOME",
+    "LLMCLOAK_HOME",
     Path(__file__).resolve().parents[1],
 ))
 sys.path.insert(0, str(_PKG_HOME))
@@ -92,7 +92,7 @@ def test_deterministic_same_session(san):
 
 
 def test_same_secret_twice_count(san):
-    out, n = san.sanitize("Ex4mpl3-P@ss!42 e ancora Ex4mpl3-P@ss!42")
+    out, n = san.sanitize("Ex4mpl3-P@ss!42 and again Ex4mpl3-P@ss!42")
     assert n == 2 and "Ex4mpl3-P@ss!42" not in out
 
 
@@ -130,7 +130,7 @@ def test_stream_many_chunks(san):
 def test_noleak_upstream_payload(san, tmp_path):
     for s in SECRETS:
         assert s not in san.tag2secret  # sanity
-    t = "\n".join(SECRETS) + "\nextra Ex4mpl3-P@ss!42 nel testo"
+    t = "\n".join(SECRETS) + "\nextra Ex4mpl3-P@ss!42 in the text"
     out, _ = san.sanitize(t)
     for s in SECRETS:
         assert s not in out
@@ -185,7 +185,7 @@ def test_collision_extension_resolves():
 def test_persistent_collision_fails():
     class Fixed(Sanitizer):
         def _tag_core(self, secret, nbytes=4):
-            return ("aa" * nbytes)  # sempre uguale -> collisione persistente
+            return ("aa" * nbytes)  # always the same -> persistent collision
     s = Fixed(salt=b"\x04" * 16)
     with pytest.raises(VaultCollisionError):
         s.load_from_lists(["uno", "due"])
@@ -269,7 +269,7 @@ def test_named_entries_parse_and_lookup(tmp_path):
     back, r, un = s.desanitize(out)
     assert back == "token: agent-token-1 key: sk-real-provider-key " \
                    "pwd: mia-password-plain" and un == []
-    # named_clients per l'auth del servizio
+    # named_clients for the service auth
     cl = s.named_clients()
     assert cl == {"agent-token-1": "client:default"}
 
@@ -379,7 +379,7 @@ def _sse_ollama_event(content):
 
 
 def _collect_texts(out):
-    """Ricostruisce il testo del modello da un flusso SSE processato."""
+    """Rebuilds the model text from a processed SSE stream."""
     texts = []
     for line in out.split("\n"):
         line = line.strip()
@@ -465,10 +465,10 @@ def test_sse_nonjson_passthrough(san):
 
 
 def test_sse_flush_residual_partial_prefix(san):
-    # il testo termina con un potenziale prefisso di tag: va emesso al flush
-    out, sd = _run_sse(san, [_sse_openai_event("fine testo PW")])
+    # the text ends with a potential tag prefix: it must be emitted at flush
+    out, sd = _run_sse(san, [_sse_openai_event("end of text PW")])
     text = "".join(_collect_texts(out))
-    assert text == "fine testo PW"
+    assert text == "end of text PW"
 
 
 def test_sse_no_tag_clean_passthrough(san):
@@ -479,7 +479,7 @@ def test_sse_no_tag_clean_passthrough(san):
 
 
 def test_sse_unknown_tag_not_crash(san):
-    # 'PWD_' + hex non noto: passa through senza risolvere e senza crash
+    # unknown 'PWD_' + hex: passes through without resolving and without crash
     out, sd = _run_sse(san, [_sse_openai_event("x PWD_deadbeef y")])
     text = "".join(_collect_texts(out))
     assert "PWD_deadbeef" in text and sd.restored_count == 0

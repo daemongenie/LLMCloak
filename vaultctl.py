@@ -49,15 +49,21 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-BASE = Path(os.environ.get(
-    "SECRETS_PROXY_HOME", Path(__file__).resolve().parent))
+def _env(name: str, default=None):
+    """Read LLMCLOAK_* first; legacy SECRETS_PROXY_* kept as fallback."""
+    v = os.environ.get("LLMCLOAK_" + name)
+    if v not in (None, ""):
+        return v
+    return os.environ.get("SECRETS_PROXY_" + name, default)
+
+
+BASE = Path(_env("HOME", Path(__file__).resolve().parent))
 sys.path.insert(0, str(BASE))
 from core import NAMED_RE, derive_key, load_or_create_salt  # noqa: E402
 
-VAULT = Path(os.environ.get(
-    "SECRETS_PROXY_VAULT", BASE / "vault.txt"))
+VAULT = Path(_env("VAULT", BASE / "vault.txt"))
 SALT_PATH = Path(str(VAULT) + ".salt")
-BASE_URL = os.environ.get("SECRETS_PROXY_BASE_URL", "http://127.0.0.1:8917")
+BASE_URL = _env("BASE_URL", "http://127.0.0.1:8917")
 
 
 # ---------- vault file helpers ----------
@@ -274,8 +280,8 @@ def cmd_decrypt(args):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="vaultctl",
                                 description="LLMCloak management CLI")
-    p.add_argument("--admin-token", default=os.environ.get("SECRETS_PROXY_API_KEY", ""),
-                   help="admin token (default: env SECRETS_PROXY_API_KEY)")
+    p.add_argument("--admin-token", default=_env("API_KEY", ""),
+                   help="admin token (default: env LLMCLOAK_API_KEY)")
     p.add_argument("--passphrase", default=None,
                    help="vault passphrase (non-interactive; otherwise prompts)")
     sub = p.add_subparsers(dest="cmd", required=True)

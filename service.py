@@ -27,20 +27,23 @@ Mode A: transparent proxy towards an UPSTREAM (e.g. api.openai.com).
 Mode B: POST /sanitize and /desanitize for programmatic use (same auth).
 
 Vault key handling (v1.1.0):
-  Mode B: SECRETS_PROXY_KEY env (Fernet key) -> vault loaded at startup.
+  Mode B: LLMCLOAK_KEY env (Fernet key) -> vault loaded at startup.
   Mode A: no key at startup -> service LOCKED (503 on everything);
           unlock via POST /admin/unlock {"passphrase": ...} — the derived
           key lives ONLY in memory, never on disk.
 
 Env:
-  SECRETS_PROXY_VAULT=<vault path>   (default: vault.txt next to the package)
-  SECRETS_PROXY_KEY=...        Fernet key for an encrypted vault (mode B)
-  SECRETS_PROXY_API_KEY=...    admin token (X-Admin-Token / X-Proxy-Key);
+  LLMCLOAK_VAULT=<vault path>   (default: vault.txt next to the package)
+  LLMCLOAK_KEY=...        Fernet key for an encrypted vault (mode B)
+  LLMCLOAK_API_KEY=...    admin token (X-Admin-Token / X-Proxy-Key);
                                empty: admin only from loopback
-  SECRETS_PROXY_UPSTREAM=https://api.openai.com   (overrides config file)
-  SECRETS_PROXY_CONFIG=<json>  persistent config (default service_config.json
+  LLMCLOAK_UPSTREAM=https://api.openai.com   (overrides config file)
+  LLMCLOAK_CONFIG=<json>  persistent config (default service_config.json
                                next to the package; key is not secret)
-  SECRETS_PROXY_PORT=8917
+  LLMCLOAK_PORT=8917
+
+  Legacy SECRETS_PROXY_* variable names are still honoured as fallback
+  (deprecated). Prefer the LLMCLOAK_* names.
 
 Logs are ALWAYS redacted: never bodies, only counts. Mapping in memory only.
 
@@ -85,15 +88,24 @@ from core import (Sanitizer, StreamDesanitizer, VaultNotLoaded,
 import dashboard as dash
 from cryptography.fernet import Fernet, InvalidToken
 
-VAULT_PATH = os.environ.get(
-    "SECRETS_PROXY_VAULT",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault.txt"))
-MASTER_KEY = os.environ.get("SECRETS_PROXY_KEY") or None
-ADMIN_KEY = os.environ.get("SECRETS_PROXY_API_KEY", "")
-CONFIG_PATH = os.environ.get(
-    "SECRETS_PROXY_CONFIG",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "service_config.json"))
-ENV_UPSTREAM = os.environ.get("SECRETS_PROXY_UPSTREAM", "").rstrip("/")
+_envdef = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _env(name: str, default=None):
+    """Read LLMCLOAK_* first; legacy SECRETS_PROXY_* kept as fallback."""
+    v = os.environ.get("LLMCLOAK_" + name)
+    if v not in (None, ""):
+        return v
+    return os.environ.get("SECRETS_PROXY_" + name, default)
+
+
+VAULT_PATH = _env("VAULT",
+                  os.path.join(_envdef, "vault.txt"))
+MASTER_KEY = _env("KEY") or None
+ADMIN_KEY = _env("API_KEY", "")
+CONFIG_PATH = _env("CONFIG",
+                   os.path.join(_envdef, "service_config.json"))
+ENV_UPSTREAM = _env("UPSTREAM", "").rstrip("/")
 KDF_SALT_PATH = VAULT_PATH + ".salt"
 
 START_TS = time.time()
@@ -143,9 +155,9 @@ LOG_SANITIZED_MAX = int(_CFG.get("log_sanitized_max", 4000))
 # X-Proxy-Overhead-ms reports time spent INSIDE the proxy (sanitize in +
 # desanitize out; the upstream LLM wait is excluded). Optional per-request
 # log line, togglable via config "overhead_log", env
-# SECRETS_PROXY_OVERHEAD_LOG, or POST /admin/overhead-log.
+# LLMCLOAK_OVERHEAD_LOG, or POST /admin/overhead-log.
 OVERHEAD_LOG = (bool(_CFG.get("overhead_log", False)) or
-                os.environ.get("SECRETS_PROXY_OVERHEAD_LOG", "").lower()
+                _env("OVERHEAD_LOG", "").lower()
                 in ("1", "true", "yes"))
 
 
@@ -196,7 +208,7 @@ def _load_or_fail() -> None:
         if MASTER_KEY is None and _vault_is_encrypted(VAULT_PATH):
             raise VaultNotLoaded(
                 "vault encrypted but no key: LOCKED (mode A — unlock via "
-                "POST /admin/unlock, or set SECRETS_PROXY_KEY)")
+                "POST /admin/unlock, or set LLMCLOAK_KEY)")
         san.load_vault(VAULT_PATH, master_key=MASTER_KEY, enforce_perms=True)
         print(f"[secrets-proxy] vault loaded: {len(san.secrets)} secrets, "
               f"{len(san.named)} named, {len(san.patterns)} patterns", flush=True)
@@ -208,7 +220,7 @@ def _startup() -> None:
         _load_or_fail()
     except Exception as e:
         # fail-safe: starts without vault -> LOCKED (503), never in clear.
-        # If the vault is encrypted and SECRETS_PROXY_KEY is missing: mode A,
+        # If the vault is encrypted and LLMCLOAK_KEY is missing: mode A,
         # unlock via POST /admin/unlock.
         print(f"[secrets-proxy] VAULT NOT LOADED ({e!r}): LOCKED — "
               f"unlock via POST /admin/unlock", flush=True)
@@ -983,7 +995,7 @@ def vault_reload(request: Request, x_proxy_key: str = Header(default=""),
     if key is None and _vault_is_encrypted(VAULT_PATH):
         raise HTTPException(
             503, "vault is encrypted but no key is available (set "
-                 "SECRETS_PROXY_KEY, enable AUTO-UNLOCK, or unlock via "
+                 "LLMCLOAK_KEY, enable AUTO-UNLOCK, or unlock via "
                  "POST /admin/unlock)")
     try:
         with _admin_lock:

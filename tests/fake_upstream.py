@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fake LLM upstream per test e2e: registra i body ricevuti (per verificare
-il no-leak), li "cita" nella risposta come farebbe un LLM, e ha un endpoint SSE
-that deliberately splits chunks into 3-character pieces."""
+"""Fake LLM upstream for e2e tests: records the received bodies (to verify
+the no-leak), "cites" them in the response like an LLM would, and has an SSE
+endpoint that deliberately splits chunks into 3-character pieces."""
 import json
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 
 app = FastAPI()
-RECEIVED = []  # {"body", "path", "authorization"} ricevuti (assert no-leak)
+RECEIVED = []  # {"body", "path", "authorization"} records (no-leak assert)
 
 
 def _cite(body_bytes: bytes) -> str:

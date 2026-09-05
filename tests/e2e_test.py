@@ -41,7 +41,7 @@ from pathlib import Path
 import requests
 
 BASE = Path(os.environ.get(
-    "SECRETS_PROXY_HOME",
+    "LLMCLOAK_HOME",
     Path(__file__).resolve().parents[1],
 ))
 PKG = BASE
@@ -52,13 +52,13 @@ os.chdir(str(BASE))
 from core import derive_key, load_or_create_salt  # noqa: E402
 from cryptography.fernet import Fernet  # noqa: E402
 
-os.environ["SECRETS_PROXY_UPSTREAM"] = "http://127.0.0.1:8919"
+os.environ["LLMCLOAK_UPSTREAM"] = "http://127.0.0.1:8919"
 # NEUTRAL config for the test instances: keeps a deployed
 # service_config.json from altering the expected behavior
 _cfg_test = BASE / "_e2e_config.json"
 _cfg_test.write_text('{"upstream": "https://api.openai.com"}\n')
-os.environ["SECRETS_PROXY_CONFIG"] = str(_cfg_test)
-os.environ["SECRETS_PROXY_API_KEY"] = "test-admin-key"
+os.environ["LLMCLOAK_CONFIG"] = str(_cfg_test)
+os.environ["LLMCLOAK_API_KEY"] = "test-admin-key"
 ADMIN = {"X-Admin-Token": "test-admin-key"}
 CLIENT_TOKEN = "agent-token-e2e-1"
 PROVIDER_KEY = "sk-provider-real-key-e2e"
@@ -103,7 +103,7 @@ def up(url, name, wait_s=30):
 
 
 def start_service(port, vault_path, extra_env=None):
-    env = {**os.environ, "SECRETS_PROXY_VAULT": str(vault_path)}
+    env = {**os.environ, "LLMCLOAK_VAULT": str(vault_path)}
     env.update(extra_env or {})
     log = open(f"{PROXY_LOG}.{port}", "w")
     procs.append(subprocess.Popen(

@@ -26,3 +26,7 @@ Every commit must include a `Signed-off-by:` line, certifying that you wrote the
 ## Issues
 
 Bug reports and feature requests are welcome. Include reproduction steps and, for security-sensitive topics (this is a secrets-pseudonymization proxy), contact the maintainers privately for anything that could expose a vulnerability: info@daemongenie.com
+
+---
+
+LLMCloak — Copyright 2026 Quantum Sphere EOOD. Licensed under the Apache License, Version 2.0 (see LICENSE).

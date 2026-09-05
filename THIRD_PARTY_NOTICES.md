@@ -1,3 +1,7 @@
+# LLMCloak — Copyright 2026 Quantum Sphere EOOD (Apache License 2.0)
+#
+# Third-party components and licenses used by LLMCloak:
+#
 # Third-Party Notices
 
 LLMCloak incorporates third-party open-source software. The list below covers the

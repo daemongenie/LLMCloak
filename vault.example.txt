@@ -1,3 +1,5 @@
+# LLMCloak vault example — Copyright 2026 Quantum Sphere EOOD
+# Apache License 2.0 — see LICENSE.
 # example vault — ONE secret per line, permissions 0600
 # lines re:<regex> = patterns for dynamic credentials
 Ex4mpl3-P@ss!42

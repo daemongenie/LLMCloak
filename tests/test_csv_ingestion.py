@@ -21,7 +21,7 @@ Whole-list anonymization (e.g. a customer table extracted from Oracle):
 Zero secrets in logs/fixtures (synthetic data only).
 
 Import-order note: pytest imports every test module at COLLECTION time.
-The service module snapshots SECRETS_PROXY_* env at import, so who
+The service module snapshots LLMCLOAK_* env at import, so who
 imports first wins. This suite deliberately does NOT import `service`
 at module level: it imports it lazily inside the autouse fixture and
 monkeypatches the module globals (VAULT_PATH, KDF_SALT_PATH, CONFIG_PATH)
@@ -57,11 +57,11 @@ def _get_service():
         return sys.modules["service"]
     import tempfile
     _TMPDIR = tempfile.mkdtemp(prefix="sp_csv_test_")
-    os.environ["SECRETS_PROXY_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
-    os.environ["SECRETS_PROXY_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
-    os.environ["SECRETS_PROXY_API_KEY"] = "csv-test-admin"
-    os.environ["SECRETS_PROXY_UPSTREAM"] = ""
-    os.environ.pop("SECRETS_PROXY_KEY", None)
+    os.environ["LLMCLOAK_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
+    os.environ["LLMCLOAK_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
+    os.environ["LLMCLOAK_API_KEY"] = "csv-test-admin"
+    os.environ["LLMCLOAK_UPSTREAM"] = ""
+    os.environ.pop("LLMCLOAK_KEY", None)
     import service            # noqa: F401
     return sys.modules["service"]
 

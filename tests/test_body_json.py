@@ -1,3 +1,17 @@
+# Copyright 2026 Quantum Sphere EOOD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # v1.5.10 regression tests: the proxy must sanitize/desanitize PARSED
 # JSON string fields, never the raw JSON text. With large CSV-ingested
 # vaults, raw-text replacement rewrote JSON structure (numeric literals,
@@ -16,11 +30,11 @@ _PKG_HOME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PKG_HOME))
 
 _TMPDIR = tempfile.mkdtemp(prefix="sp_body_json_")
-os.environ["SECRETS_PROXY_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
-os.environ["SECRETS_PROXY_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
-os.environ["SECRETS_PROXY_API_KEY"] = "body-json-test-admin"
-os.environ["SECRETS_PROXY_UPSTREAM"] = ""
-os.environ.pop("SECRETS_PROXY_KEY", None)
+os.environ["LLMCLOAK_VAULT"] = os.path.join(_TMPDIR, "vault.txt")
+os.environ["LLMCLOAK_CONFIG"] = os.path.join(_TMPDIR, "service_config.json")
+os.environ["LLMCLOAK_API_KEY"] = "body-json-test-admin"
+os.environ["LLMCLOAK_UPSTREAM"] = ""
+os.environ.pop("LLMCLOAK_KEY", None)
 
 import service as svc          # noqa: E402
 from core import Sanitizer     # noqa: E402
@@ -43,7 +57,7 @@ def loaded_san():
 def test_numeric_literal_untouched(loaded_san):
     body = json.dumps({"model": "gpt-x",
                        "messages": [{"role": "user",
-                                     "content": "cliente 3471234567 ok"}],
+                                     "content": "client 3471234567 ok"}],
                        "external_id": 3471234567,
                        "stream": False}).encode()
     out, n = svc._sanitize_body(body)
@@ -60,7 +74,7 @@ def test_numeric_literal_untouched(loaded_san):
 def test_boolean_token_untouched(loaded_san):
     body = json.dumps({"flag": True,
                        "messages": [{"role": "user",
-                                     "content": "abilitato: true, conferma"}]}
+                                     "content": "enabled: true, confirm"}]}
                       ).encode()
     out, n = svc._sanitize_body(body)
     payload = json.loads(out.decode())
@@ -71,7 +85,7 @@ def test_boolean_token_untouched(loaded_san):
 
 def test_quoted_value_roundtrip(loaded_san):
     body = json.dumps({"messages": [{"role": "user",
-                                     "content": 'ha detto: say "hi" ieri'}]}
+                                     "content": 'he said: say "hi" yesterday'}]}
                       ).encode()
     out, n = svc._sanitize_body(body)
     payload = json.loads(out.decode())
@@ -82,13 +96,13 @@ def test_quoted_value_roundtrip(loaded_san):
     restored, r, un = svc._restore_response_text(resp.decode())
     obj = json.loads(restored)                  # must stay valid JSON
     assert obj["choices"][0]["message"]["content"] == \
-        'echo: ha detto: say "hi" ieri'
+        'echo: he said: say "hi" yesterday'
     assert r == 1 and un == []
 
 
 def test_backslash_value_roundtrip(loaded_san):
     body = json.dumps({"messages": [{"role": "user",
-                                     "content": "percorso back\\slash fine"}]}
+                                     "content": "path back\\slash fine"}]}
                       ).encode()
     out, n = svc._sanitize_body(body)
     payload = json.loads(out.decode())
@@ -97,13 +111,13 @@ def test_backslash_value_roundtrip(loaded_san):
     resp = json.dumps({"content": f"cco: {tag_txt}"}).encode()
     restored, r, un = svc._restore_response_text(resp.decode())
     assert json.loads(restored)["content"] == \
-        "cco: percorso back\\slash fine"
+        "cco: path back\\slash fine"
     assert r == 1 and un == []
 
 
 def test_multimodal_parts(loaded_san):
     body = json.dumps({"messages": [{"role": "user", "content": [
-        {"type": "text", "text": "cap 00123 qui"},
+        {"type": "text", "text": "cap 00123 here"},
         {"type": "image_url",
          "image_url": {"url": "https://x/y.png"}}]}]}).encode()
     out, n = svc._sanitize_body(body)
@@ -120,7 +134,7 @@ def test_non_json_legacy_path(loaded_san):
 
 
 def test_no_match_byte_perfect_passthrough(loaded_san):
-    raw = b'{"messages":[{"role":"user","content":"nessun segreto qui"}]}'
+    raw = b'{"messages":[{"role":"user","content":"no secret here"}]}'
     out, n = svc._sanitize_body(raw)
     assert n == 0 and out == raw
 
@@ -132,10 +146,10 @@ def test_restore_no_tags_identity(loaded_san):
 
 
 def test_restore_unresolved_reported(loaded_san):
-    t = json.dumps({"content": "tag PWD_deadbeef ignoto"})
+    t = json.dumps({"content": "tag PWD_deadbeef unknown"})
     out, r, un = svc._restore_response_text(t)
     assert r == 0 and len(un) == 1 and json.loads(out)["content"] == \
-        "tag PWD_deadbeef ignoto"
+        "tag PWD_deadbeef unknown"
 
 
 def test_notice_injection_after_fix(loaded_san):

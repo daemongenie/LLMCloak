@@ -1,4 +1,7 @@
-# LLMCloak runtime dependencies
+# LLMCloak — Copyright 2026 Quantum Sphere EOOD
+# Licensed under the Apache License, Version 2.0 (see LICENSE).
+#
+# Runtime dependencies
 fastapi>=0.110
 uvicorn>=0.29
 cryptography>=41.0
@@ -8,4 +11,5 @@ pyahocorasick>=2.0
 
 # test / E2E
 httpx>=0.27
+requests>=2.31
 pytest>=8.0

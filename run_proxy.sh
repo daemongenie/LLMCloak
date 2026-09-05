@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Copyright 2026 Quantum Sphere EOOD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # =============================================================================
 # run_proxy.sh — LLMCloak management (v1.1.0) for testing and headless
 # deployment
@@ -15,18 +29,18 @@
 #   ./run_proxy.sh upstream [URL]   show/set the upstream
 #
 # Configuration via env (all optional):
-#   SECRETS_PROXY_HOST=0.0.0.0          bind address (default 0.0.0.0: LAN
+#   LLMCLOAK_HOST=0.0.0.0          bind address (default 0.0.0.0: LAN
 #                                       deploy on VM .223 — restrict sources
 #                                       with the IP whitelist from the
 #                                       dashboard)
-#   SECRETS_PROXY_PORT=8917
-#   SECRETS_PROXY_VAULT=<path>          default: vault.txt next to this script
-#   SECRETS_PROXY_KEY=<Fernet key>      mode B: auto-load at startup (headless);
+#   LLMCLOAK_PORT=8917
+#   LLMCLOAK_VAULT=<path>          default: vault.txt next to this script
+#   LLMCLOAK_KEY=<Fernet key>      mode B: auto-load at startup (headless);
 #                                       do NOT set it for mode A (manual
 #                                       unlock)
-#   SECRETS_PROXY_API_KEY=<token>       admin token (unlock/lock/remote)
-#   SECRETS_PROXY_PASSPHRASE=...        for NON-interactive unlock (script/test)
-#   SECRETS_PROXY_UPSTREAM=URL          overrides the persisted config
+#   LLMCLOAK_API_KEY=<token>       admin token (unlock/lock/remote)
+#   LLMCLOAK_PASSPHRASE=...        for NON-interactive unlock (script/test)
+#   LLMCLOAK_UPSTREAM=URL          overrides the persisted config
 # service_config.json (keys read at startup):
 #   "open_mode": true|false             client token not required on the proxy
 #   "trusted_ips": ["ip", ...]          IP whitelist in open mode ([] = all)
@@ -35,20 +49,20 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOST="${SECRETS_PROXY_HOST:-0.0.0.0}"
-PORT="${SECRETS_PROXY_PORT:-8917}"
+HOST="${LLMCLOAK_HOST:-0.0.0.0}"
+PORT="${LLMCLOAK_PORT:-8917}"
 # flat layout: the code (core/service/dashboard/vaultctl) lives next to this script
 ROOT="$SCRIPT_DIR"
 RUN_DIR="$SCRIPT_DIR/run"
 PIDFILE="$RUN_DIR/secrets_proxy.pid"
 LOGFILE="$RUN_DIR/secrets_proxy.log"
-VAULT="${SECRETS_PROXY_VAULT:-$ROOT/vault.txt}"
+VAULT="${LLMCLOAK_VAULT:-$ROOT/vault.txt}"
 BASE_URL="http://$HOST:$PORT"
 
 mkdir -p "$RUN_DIR" 2>/dev/null && chmod 700 "$RUN_DIR" 2>/dev/null
 
-if [ -n "${SECRETS_PROXY_KEY:-}" ]; then
-    MODE_DESC="B (auto-key ${SECRETS_PROXY_KEY:0:4}...)"
+if [ -n "${LLMCLOAK_KEY:-}" ]; then
+    MODE_DESC="B (auto-key ${LLMCLOAK_KEY:0:4}...)"
 else
     MODE_DESC="A (manual unlock)"
 fi
@@ -58,9 +72,9 @@ elif [ -f "$ROOT/vaultctl.py" ];      then VCTL="$ROOT/vaultctl.py"
 else echo "vaultctl.py not found (searched in $SCRIPT_DIR and $ROOT)" >&2; exit 1; fi
 
 _vctl() { \
-    SECRETS_PROXY_BASE_URL="$BASE_URL" \
-    SECRETS_PROXY_API_KEY="${SECRETS_PROXY_API_KEY:-}" \
-    python3 "$VCTL" ${SECRETS_PROXY_PASSPHRASE:+--passphrase "$SECRETS_PROXY_PASSPHRASE"} "$@"; }
+    LLMCLOAK_BASE_URL="$BASE_URL" \
+    LLMCLOAK_API_KEY="${LLMCLOAK_API_KEY:-}" \
+    python3 "$VCTL" ${LLMCLOAK_PASSPHRASE:+--passphrase "$LLMCLOAK_PASSPHRASE"} "$@"; }
 
 _health() { curl -s --max-time 2 "$BASE_URL/health" 2>/dev/null; }
 
@@ -77,10 +91,10 @@ cmd_start() {
     fi
     echo "[run_proxy] start: vault=$VAULT host=$HOST port=$PORT $MODE_DESC"
     ( cd "$ROOT" \
-      && export SECRETS_PROXY_VAULT="$VAULT" SECRETS_PROXY_PORT="$PORT" \
-      && export SECRETS_PROXY_API_KEY="${SECRETS_PROXY_API_KEY:-}" \
-      && export SECRETS_PROXY_KEY="${SECRETS_PROXY_KEY:-}" \
-      && export SECRETS_PROXY_UPSTREAM="${SECRETS_PROXY_UPSTREAM:-}" \
+      && export LLMCLOAK_VAULT="$VAULT" LLMCLOAK_PORT="$PORT" \
+      && export LLMCLOAK_API_KEY="${LLMCLOAK_API_KEY:-}" \
+      && export LLMCLOAK_KEY="${LLMCLOAK_KEY:-}" \
+      && export LLMCLOAK_UPSTREAM="${LLMCLOAK_UPSTREAM:-}" \
       && exec nohup python3 -m uvicorn service:app \
            --host "$HOST" --port "$PORT" --log-level warning \
            >> "$LOGFILE" 2>&1 ) &
