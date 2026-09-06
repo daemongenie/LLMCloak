@@ -1,5 +1,5 @@
 {
  "upstream": "https://api.openai.com",
- "open_mode": false,
+ "open_mode": true,
  "trusted_ips": []
 }

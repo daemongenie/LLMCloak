@@ -56,7 +56,7 @@ os.environ["LLMCLOAK_UPSTREAM"] = "http://127.0.0.1:8919"
 # NEUTRAL config for the test instances: keeps a deployed
 # service_config.json from altering the expected behavior
 _cfg_test = BASE / "_e2e_config.json"
-_cfg_test.write_text('{"upstream": "https://api.openai.com"}\n')
+_cfg_test.write_text('{"upstream": "https://api.openai.com", "open_mode": false}\n')
 os.environ["LLMCLOAK_CONFIG"] = str(_cfg_test)
 os.environ["LLMCLOAK_API_KEY"] = "test-admin-key"
 ADMIN = {"X-Admin-Token": "test-admin-key"}

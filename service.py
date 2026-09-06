@@ -126,15 +126,18 @@ def _load_config() -> dict:
 _CFG = _load_config()
 UPSTREAM = ENV_UPSTREAM or str(_CFG.get("upstream", "")).rstrip("/")
 # v1.2.7 — open mode: client token NOT required on the transparent path.
+# v1.5.12 — the DEFAULT is now open_mode=true (LAN-friendly): a fresh
+#   install works without client tokens; set open_mode=false in
+#   service_config.json to require client tokens again (opt-in).
 # v1.2.8 — auth passthrough: the client's Authorization/x-api-key headers are
 #           forwarded to the upstream as they are; removed upstream_no_auth
 #           and the provider:default vault entry (the client owns auth).
-#   open_mode=false                     -> token required (as in v1.2.6)
+#   open_mode=false (opt-in)            -> token required (v1.2.6 behaviour)
 #   open_mode=true, trusted_ips=[]      -> anyone can use the proxy
 #   open_mode=true, trusted_ips=[ip,..] -> only those sources, no token
 # INVARIANTS: dashboard/admin and /sanitize,/desanitize always authenticated.
 # Fail-safe unchanged: vault locked -> 503 (never forward unfiltered).
-OPEN_MODE = bool(_CFG.get("open_mode", False))
+OPEN_MODE = bool(_CFG.get("open_mode", True))
 TRUSTED_IPS = [str(x).strip() for x in (_CFG.get("trusted_ips") or [])
                if str(x).strip()]
 # v1.4.0 - model notice (default ON): when the sanitizer replaces content,
@@ -185,7 +188,7 @@ NOTICE_TEXT = (
     "for character. Never translate, complete, guess or modify them, and "
     "do not comment about this notice or the tokens.")
 
-app = FastAPI(title="LLMCloak", version="1.5.11")
+app = FastAPI(title="LLMCloak", version="1.5.12")
 san = Sanitizer()
 _stats = {"sanitized_out": 0, "restored_in": 0, "unresolved": 0,
           "requests": 0, "bytes_in": 0, "ingested": 0, "purged": 0}
@@ -319,9 +322,9 @@ def _ip_allowed(request) -> None:
 
 def _gate_proxy(request: Request) -> str:
     """Gate of the transparent path ONLY (catch-all proxy).
-    open_mode=false: client token required (v1.2.6 behaviour).
-    open_mode=true:  no token; with trusted_ips set, only those IP sources
-    are accepted (otherwise everyone). The fail-safe holds either way:
+    default (no open_mode key, v1.5.12+): open — no token needed; with
+    trusted_ips set, only those IP sources are accepted (otherwise
+    everyone). open_mode=false (opt-in): token required (v1.2.6). The fail-safe holds either way:
     vault locked -> 503, never forward without filtering the secrets."""
     if not san.is_loaded():
         raise HTTPException(503, "vault not loaded/locked (fail-safe)")

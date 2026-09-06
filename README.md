@@ -142,8 +142,9 @@ like `NAME_PWD_xxxx`. Every import is kept in the **import history**: with the
 
 | mode | who can call the proxy |
 |---|---|
-| `open_mode: false` (default) | only callers presenting a valid `client:` token |
-| `open_mode: true` | anyone (can be restricted with the `trusted_ips` IP/CIDR allowlist) |
+| default (no `open_mode` key) | anyone (LAN-friendly); restrict with the `trusted_ips` IP/CIDR allowlist |
+| `open_mode: true` (explicit) | same as default |
+| `open_mode: false` (opt-in) | only callers presenting a valid `client:` token |
 
 Configuration lives in `service_config.json` (see
 `service_config.example.json`), editable from the dashboard as well.

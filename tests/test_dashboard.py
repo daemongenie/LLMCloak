@@ -383,12 +383,18 @@ def test_14_dashboard_not_proxied():
         # the proxy catch-all is still registered: fail-closed without vault
         r = c.get("/some/llm/path")
         assert r.status_code == 503
-        # ...and with the service active it requires client auth (not the dashboard)
-        assert _login(c).status_code == 200
-        r = c.get("/some/llm/path",
-                  headers={"Authorization": "Bearer wrong-token"})
-        assert r.status_code == 401
-        assert r.json()["detail"] == "invalid client token"
+        # ...and in token mode (opt-in, v1.5.12) it requires client auth
+        # (not the dashboard). Default is open now, so pin the mode here.
+        old_open = svc.OPEN_MODE
+        try:
+            svc.OPEN_MODE = False
+            assert _login(c).status_code == 200
+            r = c.get("/some/llm/path",
+                      headers={"Authorization": "Bearer wrong-token"})
+            assert r.status_code == 401
+            assert r.json()["detail"] == "invalid client token"
+        finally:
+            svc.OPEN_MODE = old_open
     finally:
         svc.UPSTREAM = old
 

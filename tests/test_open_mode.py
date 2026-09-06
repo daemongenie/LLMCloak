@@ -134,6 +134,11 @@ _CHAT = {"model": "m", "messages": [{"role": "user",
 
 
 # ------------------------------------------------------------------ tests
+def test_00_default_is_open():
+    """v1.5.12: a config WITHOUT open_mode -> OPEN_MODE True (default open)."""
+    assert svc.OPEN_MODE is True
+
+
 def test_01_open_off_token_required(monkeypatch, up_url):
     """open_mode=false: without token 401; with token ok + no-leak + restore."""
     c = _client(monkeypatch, up_url, open_mode=False)
