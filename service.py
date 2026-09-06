@@ -1463,7 +1463,7 @@ def _register_dashboard(app) -> None:
     def dash_state(request: Request):
         s = _sess(request)
         snap = {"service": "active" if san.is_loaded() else "locked",
-                "version": "1.5.6",
+                "version": app.version,
                 "upstream": UPSTREAM,
                 "endpoints": _endpoints_list(),
                 "vault_path": VAULT_PATH,
