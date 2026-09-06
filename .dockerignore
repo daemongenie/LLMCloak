@@ -1,0 +1,23 @@
+# Keep the build context minimal — no local state, caches or secrets
+.git
+.gitignore
+.gitattributes
+run/
+*.log
+*.log.*
+vault.txt
+vault.txt.salt
+service_config.json
+*.local.*
+.env
+.env.*
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.md.bak
+docs/
+Dockerfile
+docker-compose.yml
+.github/

@@ -1,0 +1,43 @@
+# docker-compose for LLMCloak (Quantum Sphere EOOD)
+#
+#   docker compose up -d          # start (data persists in named volume)
+#   docker compose logs -f        # follow logs
+#   docker compose down           # stop (keeps volume)
+#
+# First run: open http://localhost:8917/dashboard and set the passphrase.
+# Headless (mode B): set LLMCLOAK_KEY below (Fernet key) instead.
+
+services:
+  llmcloak:
+    build: .
+    image: llmcloak:latest
+    container_name: llmcloak
+    restart: unless-stopped
+    ports:
+      - "8917:8917"
+    volumes:
+      - llmcloak_data:/data
+    environment:
+      # --- networking -------------------------------------------------------
+      # Upstream LLM endpoint whose traffic gets pseudonymized.
+      # Examples: https://api.openai.com/v1 , http://host.docker.internal:11434/v1 (Ollama on host)
+      LLMCLOAK_UPSTREAM: ""
+      # --- auth (choose ONE mode) --------------------------------------------
+      # Mode A (default): leave LLMCLOAK_KEY empty -> set passphrase in dashboard
+      # Mode B (headless): pass a Fernet key; vault auto-loads at boot
+      LLMCLOAK_KEY: ""
+      # Optional: fixed admin key for /admin/* endpoints (otherwise random, in logs)
+      LLMCLOAK_API_KEY: ""
+      # --- tuning ------------------------------------------------------------
+      LLMCLOAK_OVERHEAD_LOG: "off"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys,os; r=urllib.request.urlopen(\"http://127.0.0.1:\"+os.environ.get(\"LLMCLOAK_PORT\",\"8917\")+\"/health\", timeout=4); sys.exit(0 if r.status==200 else 1)'"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  llmcloak_data:
