@@ -94,8 +94,9 @@ docker compose up -d
 ```
 
 All persistent state (vault, salt, config) lives in the `/data` volume —
-nothing sensitive is stored inside the image. The container runs as a
-non-root user (uid 10001). To start unlocked in headless environments
+nothing sensitive is stored inside the image. On start the container briefly runs as root: the
+entrypoint fixes `/data` ownership (uid 10001) for any bind-mount, then
+drops privileges before exec-ing the server. To start unlocked in headless environments
 (mode B), pass a Fernet key via `LLMCLOAK_KEY`; to point at a local
 upstream (e.g. Ollama on the host) use
 `LLMCLOAK_UPSTREAM=http://host.docker.internal:11434/v1`.
