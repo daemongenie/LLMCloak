@@ -78,6 +78,36 @@ base_url = "http://127.0.0.1:8917/v1"
 The full step-by-step guide (including troubleshooting) is in
 **[INSTALL.md](INSTALL.md)**.
 
+## Quick start with Docker
+
+```bash
+docker build -t llmcloak .
+docker run -d --name llmcloak -p 8917:8917 -v llmcloak_data:/data llmcloak
+# open the dashboard, set the passphrase on first launch:
+#   http://127.0.0.1:8917/dashboard
+```
+
+Or with Compose:
+
+```bash
+docker compose up -d
+```
+
+All persistent state (vault, salt, config) lives in the `/data` volume —
+nothing sensitive is stored inside the image. The container runs as a
+non-root user (uid 10001). To start unlocked in headless environments
+(mode B), pass a Fernet key via `LLMCLOAK_KEY`; to point at a local
+upstream (e.g. Ollama on the host) use
+`LLMCLOAK_UPSTREAM=http://host.docker.internal:11434/v1`.
+
+Prebuilt multi-arch images (amd64/arm64) are published to
+`ghcr.io/daemongenie/llmcloak` on every `v*` release tag:
+
+```bash
+docker run -d --name llmcloak -p 8917:8917 \
+  -v llmcloak_data:/data ghcr.io/daemongenie/llmcloak:latest
+```
+
 ## How to add secrets
 
 Three ways, from simplest to most powerful:
