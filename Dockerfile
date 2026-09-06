@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code (license + docs shipped for compliance)
 COPY service.py core.py dashboard.py vaultctl.py ./
-COPY LICENSE README.md INSTALL.md BENCH_REPORT.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md ./
+COPY LICENSE NOTICE README.md INSTALL.md BENCH_REPORT.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md ./
 COPY tests ./tests
 COPY docker-entrypoint.sh ./
 
